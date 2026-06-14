@@ -1,0 +1,22 @@
+{
+  "name": "@repopulse/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "npm run build -w @repopulse/shared && tsx watch src/server.ts",
+    "build": "npm run build -w @repopulse/shared && tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "npm run build -w @repopulse/shared && tsc -p tsconfig.json --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@repopulse/shared": "0.1.0",
+    "fastify": "^5.6.2",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.14"
+  }
+}
