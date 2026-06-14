@@ -57,17 +57,121 @@ export interface IssueMetrics {
   isSampled: boolean;
 }
 
+export interface CommitActivityPoint {
+  weekStart: string;
+  commitCount: number;
+}
+
+export interface CommitMetrics {
+  windowWeeks: number;
+  totalCommitsInWindow: number;
+  weeklyActivity: CommitActivityPoint[];
+  mostActiveWeek: CommitActivityPoint | null;
+  activeWeeks: number;
+  mergeCommitsExcludedFromDetails: number;
+  listedCommits: number;
+  detailedCommitsAnalyzed: number;
+  isSampled: boolean;
+  sampleReason: string | null;
+}
+
+export interface FileHotspot {
+  path: string;
+  touchCount: number;
+  additions: number;
+  deletions: number;
+  churn: number;
+  contributorCount: number;
+  suspectedFixTouches: number;
+  hotspotScore: number;
+}
+
+export interface FileHotspotMetrics {
+  filesObserved: number;
+  ignoredFiles: number;
+  hotspots: FileHotspot[];
+  suspectedFixHotspots: FileHotspot[];
+  detailedCommitsAnalyzed: number;
+  isSampled: boolean;
+  methodology: string;
+}
+
+export interface ContributorMetric {
+  id: string;
+  login: string | null;
+  displayName: string;
+  avatarUrl: string | null;
+  commitCount: number;
+  commitShare: number;
+}
+
+export interface ContributorMetrics {
+  contributorsObserved: number;
+  linkedContributors: number;
+  unlinkedContributors: number;
+  topContributorShare: number | null;
+  topThreeShare: number | null;
+  hhi: number | null;
+  contributors: ContributorMetric[];
+  analyzedCommits: number;
+  isSampled: boolean;
+}
+
+export interface ReleaseTrendPoint {
+  month: string;
+  releaseCount: number;
+}
+
+export interface ReleaseMetrics {
+  publishedReleasesAnalyzed: number;
+  stableReleaseCount: number;
+  prereleaseCount: number;
+  latestRelease: {
+    name: string;
+    tagName: string;
+    htmlUrl: string;
+    publishedAt: string;
+    prerelease: boolean;
+  } | null;
+  averageDaysBetweenStableReleases: number | null;
+  medianDaysBetweenStableReleases: number | null;
+  monthlyTrend: ReleaseTrendPoint[];
+  isSampled: boolean;
+}
+
+export interface AnalysisDataScope {
+  pullRequestWindowDays: number;
+  staleIssueThresholdDays: number;
+  maxPullRequestsAnalyzed: number;
+  maxIssuesAnalyzed: number;
+  commitWindowWeeks: number;
+  maxCommitsListed: number;
+  maxCommitDetailsAuthenticated: number;
+  maxCommitDetailsUnauthenticated: number;
+  maxFileHotspots: number;
+  maxContributorRows: number;
+  maxReleasesAnalyzed: number;
+  releaseTrendMonths: number;
+}
+
+export interface AnalysisDataQuality {
+  warnings: string[];
+  usedAuthenticatedGitHubClient: boolean;
+  rateLimitRemaining: number | null;
+  commitDetailsLimitedByRateLimit: boolean;
+}
+
 export interface AnalysisReport {
   repository: RepositoryOverview;
   pullRequests: PullRequestMetrics;
   issues: IssueMetrics;
+  commits: CommitMetrics;
+  fileHotspots: FileHotspotMetrics;
+  contributors: ContributorMetrics;
+  releases: ReleaseMetrics;
   generatedAt: string;
-  dataScope: {
-    pullRequestWindowDays: number;
-    staleIssueThresholdDays: number;
-    maxPullRequestsAnalyzed: number;
-    maxIssuesAnalyzed: number;
-  };
+  dataScope: AnalysisDataScope;
+  dataQuality: AnalysisDataQuality;
 }
 
 export interface AnalysisProgress {

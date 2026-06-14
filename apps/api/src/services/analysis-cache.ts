@@ -1,5 +1,7 @@
 import { ANALYSIS_CONFIG, type AnalysisReport, type RepositoryIdentifier } from "@repopulse/shared";
 
+export const ANALYSIS_CACHE_VERSION = "v3";
+
 interface CachedReport {
   report: AnalysisReport;
   expiresAt: number;
@@ -8,7 +10,7 @@ interface CachedReport {
 const cachedReports = new Map<string, CachedReport>();
 
 export function getRepositoryCacheKey(repository: RepositoryIdentifier): string {
-  return `${repository.owner}/${repository.repo}`.toLowerCase();
+  return `${ANALYSIS_CACHE_VERSION}:${repository.owner}/${repository.repo}`.toLowerCase();
 }
 
 export function getCachedReport(

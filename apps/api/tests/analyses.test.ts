@@ -61,12 +61,111 @@ function report(): AnalysisReport {
       analyzedOpenIssues: 3,
       isSampled: false
     },
+    commits: {
+      windowWeeks: 12,
+      totalCommitsInWindow: 2,
+      weeklyActivity: [
+        { weekStart: "2026-06-08", commitCount: 2 },
+        ...Array.from({ length: 11 }, (_, index) => ({
+          weekStart: `2026-03-${String(index + 1).padStart(2, "0")}`,
+          commitCount: 0
+        }))
+      ],
+      mostActiveWeek: { weekStart: "2026-06-08", commitCount: 2 },
+      activeWeeks: 1,
+      mergeCommitsExcludedFromDetails: 1,
+      listedCommits: 3,
+      detailedCommitsAnalyzed: 2,
+      isSampled: true,
+      sampleReason: "sampled"
+    },
+    fileHotspots: {
+      filesObserved: 1,
+      ignoredFiles: 0,
+      hotspots: [
+        {
+          path: "src/app.ts",
+          touchCount: 2,
+          additions: 10,
+          deletions: 4,
+          churn: 14,
+          contributorCount: 1,
+          suspectedFixTouches: 1,
+          hotspotScore: 1
+        }
+      ],
+      suspectedFixHotspots: [
+        {
+          path: "src/app.ts",
+          touchCount: 2,
+          additions: 10,
+          deletions: 4,
+          churn: 14,
+          contributorCount: 1,
+          suspectedFixTouches: 1,
+          hotspotScore: 1
+        }
+      ],
+      detailedCommitsAnalyzed: 2,
+      isSampled: true,
+      methodology: "test methodology"
+    },
+    contributors: {
+      contributorsObserved: 1,
+      linkedContributors: 1,
+      unlinkedContributors: 0,
+      topContributorShare: 1,
+      topThreeShare: 1,
+      hhi: 1,
+      contributors: [
+        {
+          id: "alice",
+          login: "alice",
+          displayName: "alice",
+          avatarUrl: null,
+          commitCount: 2,
+          commitShare: 1
+        }
+      ],
+      analyzedCommits: 2,
+      isSampled: true
+    },
+    releases: {
+      publishedReleasesAnalyzed: 1,
+      stableReleaseCount: 1,
+      prereleaseCount: 0,
+      latestRelease: {
+        name: "v1.0.0",
+        tagName: "v1.0.0",
+        htmlUrl: "https://github.com/facebook/react/releases/tag/v1.0.0",
+        publishedAt: "2026-06-01T00:00:00Z",
+        prerelease: false
+      },
+      averageDaysBetweenStableReleases: null,
+      medianDaysBetweenStableReleases: null,
+      monthlyTrend: [{ month: "2026-06", releaseCount: 1 }],
+      isSampled: false
+    },
     generatedAt: "2026-06-14T00:00:00.000Z",
     dataScope: {
       pullRequestWindowDays: 90,
       staleIssueThresholdDays: 30,
       maxPullRequestsAnalyzed: 200,
-      maxIssuesAnalyzed: 200
+      maxIssuesAnalyzed: 200,
+      commitWindowWeeks: 12,
+      maxCommitsListed: 200,
+      maxCommitDetailsAuthenticated: 60,
+      maxCommitDetailsUnauthenticated: 20,
+      maxFileHotspots: 10,
+      maxContributorRows: 10,
+      maxReleasesAnalyzed: 30,
+      releaseTrendMonths: 12
+    },
+    dataQuality: {
+      warnings: [],
+      usedAuthenticatedGitHubClient: false,
+      rateLimitRemaining: 42,
+      commitDetailsLimitedByRateLimit: false
     }
   };
 }
@@ -82,10 +181,69 @@ function buildAnalysisService() {
   const issueService = {
     getIssueMetrics: vi.fn(async () => currentReport.issues)
   };
+  const commitService = {
+    getCommitAnalysis: vi.fn(async () => ({
+      commits: [
+        {
+          sha: "a",
+          message: "fix bug",
+          authoredAt: "2026-06-13T00:00:00Z",
+          committedAt: "2026-06-13T00:00:00Z",
+          authorLogin: "alice",
+          authorName: "Alice",
+          authorAvatarUrl: null,
+          parentCount: 1,
+          authorEmailHash: "alice"
+        }
+      ],
+      detailedCommits: [
+        {
+          commit: {
+            sha: "a",
+            message: "fix bug",
+            authoredAt: "2026-06-13T00:00:00Z",
+            committedAt: "2026-06-13T00:00:00Z",
+            authorLogin: "alice",
+            authorName: "Alice",
+            authorAvatarUrl: null,
+            parentCount: 1,
+            authorEmailHash: "alice"
+          },
+          files: [
+            {
+              path: "src/app.ts",
+              previousPath: null,
+              status: "modified",
+              additions: 5,
+              deletions: 2,
+              changes: 7
+            }
+          ]
+        }
+      ],
+      warnings: ["partial hotspot warning"],
+      detailedCommitsAnalyzed: 1,
+      mergeCommitsExcludedFromDetails: 0,
+      isSampled: true,
+      sampleReason: "sampled",
+      commitDetailsLimitedByRateLimit: true,
+      rateLimitRemaining: 9
+    }))
+  };
+  const releaseService = {
+    getReleaseMetrics: vi.fn(async () => ({
+      metrics: currentReport.releases,
+      warnings: []
+    }))
+  };
   const analysisService = new AnalysisService({
     repositoryService,
     pullRequestService,
     issueService,
+    commitService,
+    releaseService,
+    usedAuthenticatedGitHubClient: false,
+    getRateLimitRemaining: () => 9,
     nowProvider: () => now
   });
 
@@ -93,7 +251,9 @@ function buildAnalysisService() {
     analysisService,
     repositoryService,
     pullRequestService,
-    issueService
+    issueService,
+    commitService,
+    releaseService
   };
 }
 
@@ -172,6 +332,12 @@ describe("RepoPulse API", () => {
 
       const completedBody = await waitForAnalysis(app, createdBody.analysisId, "completed");
       expect(completedBody.report?.repository.fullName).toBe("facebook/react");
+      expect(completedBody.report?.commits.totalCommitsInWindow).toBe(1);
+      expect(completedBody.report?.fileHotspots.hotspots[0]?.path).toBe("src/app.ts");
+      expect(completedBody.report?.contributors.topContributorShare).toBe(1);
+      expect(completedBody.report?.releases.latestRelease?.tagName).toBe("v1.0.0");
+      expect(completedBody.report?.dataQuality.warnings).toContain("partial hotspot warning");
+      expect(completedBody.report?.dataQuality.commitDetailsLimitedByRateLimit).toBe(true);
       expect(completedBody.progress).toBe(100);
     });
 
@@ -401,5 +567,49 @@ describe("RepoPulse API", () => {
     await waitForAnalysis(app, secondBody.analysisId, "completed");
 
     expect(repositoryService.getRepositoryOverview).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the task completed when optional commit analytics fail", async () => {
+    const currentReport = report();
+    const analysisService = new AnalysisService({
+      repositoryService: {
+        getRepositoryOverview: async () => currentReport.repository
+      },
+      pullRequestService: {
+        getPullRequestMetrics: async () => currentReport.pullRequests
+      },
+      issueService: {
+        getIssueMetrics: async () => currentReport.issues
+      },
+      commitService: {
+        getCommitAnalysis: async () => {
+          throw new Error("optional failure");
+        }
+      },
+      releaseService: {
+        getReleaseMetrics: async () => ({
+          metrics: currentReport.releases,
+          warnings: []
+        })
+      },
+      nowProvider: () => now
+    });
+    app = await buildApp({ analysisService });
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/analyses",
+      payload: {
+        repositoryUrl: "https://github.com/facebook/react",
+        forceRefresh: true
+      }
+    });
+    const createdBody = response.json() as AnalysisProgress;
+    const completedBody = await waitForAnalysis(app, createdBody.analysisId, "completed");
+
+    expect(response.statusCode).toBe(202);
+    expect(completedBody.report?.commits.totalCommitsInWindow).toBe(0);
+    expect(completedBody.report?.dataQuality.warnings[0]).toContain("Commit analytics");
   });
 });

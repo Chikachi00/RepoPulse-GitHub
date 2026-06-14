@@ -1,49 +1,71 @@
 # Metric Definitions
 
-RepoPulse V0.2 implements repository overview, pull request and issue metrics for public GitHub repositories. Commit, release, contributor, file hotspot and CI metrics are planned for later milestones.
+RepoPulse V0.3 implements repository overview, PR, issue, commit, file hotspot, contributor and release metrics for public GitHub repositories.
 
-## PR Analysis Window
+## Commit Window
 
-Pull request merge metrics use PRs whose `merged_at` timestamp falls within the last 90 days. The analysis uses UTC timestamps and a fixed `now` value inside each analysis run.
+Commit activity uses the repository default branch and the most recent 12 UTC weeks. Weeks start on Monday. The current week is included, and weeks with no commits are returned with `commitCount: 0`.
 
-## Average Merge Time
+## Active Week
 
-Average merge time is the arithmetic mean of `merged_at - created_at` for merged pull requests in the analysis window. It is returned in hours. If no PRs were merged in the window, the value is `null`.
+An active week is a week in the commit window with at least one commit.
 
-## Median Merge Time
+## File Touch
 
-Median merge time is the middle merge duration after sorting all merge durations in the analysis window. For an even number of values, RepoPulse averages the two middle values. It is returned in hours, or `null` when there is no data.
+A file touch means a sampled commit changed a file. If the same file appears more than once within one commit detail, it counts as one touch for that commit.
 
-## P75 Merge Time
+## Churn
 
-P75 merge time is the 75th percentile of merge durations in the analysis window, using linear interpolation between sorted values. It is returned in hours, or `null` when there is no data.
+Churn is `additions + deletions` across sampled commit details. Patch contents are not stored or returned.
 
-## Open Pull Requests
+## Hotspot Score
 
-Open PR count is based on the open pull request sample collected for the repository. Oldest open PR is the largest age in whole UTC days among analyzed open PRs. If there are no open PRs, the oldest age is `null`.
+Hotspot score combines normalized touches and log-normalized churn:
 
-## Stale Issue
+```text
+normalizedTouches = touchCount / maxTouchCount
+normalizedChurn = log1p(churn) / log1p(maxChurn)
+hotspotScore = normalizedTouches * 0.65 + normalizedChurn * 0.35
+```
 
-A stale issue is an open GitHub issue that has not been updated for more than 30 days. Pull requests returned from the GitHub Issues API are excluded before calculating issue metrics.
+The score ranges from 0 to 1 and is a change concentration signal, not a code quality score.
 
-## Stale Issue Ratio
+## Ignored Hotspot Files
 
-Stale issue ratio is `staleIssues / analyzedOpenIssues`. If there are no analyzed open issues, the value is `null`.
+Hotspot ranking ignores common generated or noisy paths such as `node_modules/**`, `dist/**`, `build/**`, `coverage/**`, lockfiles, and minified JS/CSS. Ignoring affects hotspot ranking only; it does not mean those files were never changed.
 
-## Issue Age Buckets
+## Suspected Fix Touch
 
-Issue age is calculated from `created_at` to the analysis `now` timestamp in whole UTC days.
+A suspected fix touch is a file touch from a commit whose message matches fix-related keywords such as `fix`, `fixed`, `bug`, `hotfix`, `regression`, `crash`, `error`, `修复`, `故障`, or `回归`. English keywords use word boundaries to avoid matching words like `prefix` or `fixture`.
 
-- `0-7 days`: ages 0 through 7
-- `8-30 days`: ages 8 through 30
-- `31-90 days`: ages 31 through 90
-- `90+ days`: ages 91 and above
+## Contributor Share
+
+Contributor metrics are based on the listed recent commits, not all repository history. Contributor share is `contributorCommitCount / analyzedCommitCount`. GitHub logins are preferred; unlinked commit authors are represented with internal stable IDs that do not expose email addresses.
+
+## Top 3 Share
+
+Top 3 share is the combined commit share of the three most active recent contributors.
+
+## HHI
+
+HHI is the sum of squared contributor commit shares. Values closer to 1 mean recent commits are more concentrated among fewer contributors. High concentration can be normal for small or personal repositories.
+
+## Stable Release
+
+A stable release is a published GitHub Release that is not marked as a prerelease and is not a draft. Plain Git tags without GitHub Release records are not counted.
+
+## Release Interval
+
+Release interval is the number of days between consecutive stable GitHub Releases ordered by published time. Average and median intervals are `null` when fewer than two stable releases are available.
 
 ## Sampling Limitations
 
-RepoPulse V0.2 limits analysis to avoid unbounded GitHub API requests:
+RepoPulse caps data collection to control GitHub API cost:
 
 - Up to 200 pull requests per open/closed collection path
 - Up to 200 currently open issues after excluding pull requests
+- Up to 200 listed commits
+- Up to 60 commit details with a token, or 20 without one
+- Up to 30 GitHub Releases
 
-When a collected dataset exceeds the cap, the report marks the related metric as sampled. Sampled metrics should be read as bounded analysis results, not complete repository history.
+Sampled metrics should be read as bounded recent activity signals, not complete repository history.
