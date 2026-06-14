@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import type { CreateAnalysisResponse } from "@repopulse/shared";
+import type { AnalysisProgress, ApiErrorResponse, CreateAnalysisResponse } from "@repopulse/shared";
 
 import { AnalysisResult } from "./components/AnalysisResult.js";
 import { FeaturePreview } from "./components/FeaturePreview.js";
@@ -8,7 +8,57 @@ import { Header } from "./components/Header.js";
 import { RepositoryForm } from "./components/RepositoryForm.js";
 
 export function App() {
-  const [analysis, setAnalysis] = useState<CreateAnalysisResponse | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisProgress | null>(null);
+  const [pollingError, setPollingError] = useState<string | null>(null);
+
+  function handleAnalysisCreated(nextAnalysis: CreateAnalysisResponse) {
+    setPollingError(null);
+    setAnalysis(nextAnalysis);
+  }
+
+  useEffect(() => {
+    const analysisId = analysis?.analysisId;
+
+    if (
+      !analysisId ||
+      analysis?.status === "completed" ||
+      analysis?.status === "failed" ||
+      pollingError
+    ) {
+      return undefined;
+    }
+
+    const startedAt = Date.now();
+    const poll = async () => {
+      if (Date.now() - startedAt > 90_000) {
+        setPollingError("Analysis is still running. Polling stopped after 90 seconds.");
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/analyses/${analysisId}`);
+        const body = (await response.json()) as AnalysisProgress | ApiErrorResponse;
+
+        if (!response.ok || isApiErrorResponse(body)) {
+          setPollingError(
+            isApiErrorResponse(body) ? body.error.message : "Unable to refresh analysis."
+          );
+          return;
+        }
+
+        setAnalysis(body);
+      } catch {
+        setPollingError("Unable to reach the analysis API.");
+      }
+    };
+    const timer = window.setInterval(() => {
+      void poll();
+    }, 1500);
+
+    void poll();
+
+    return () => window.clearInterval(timer);
+  }, [analysis?.analysisId, analysis?.status, pollingError]);
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
@@ -27,7 +77,7 @@ export function App() {
             engineering health report.
           </p>
 
-          <RepositoryForm onAnalysisCreated={setAnalysis} />
+          <RepositoryForm onAnalysisCreated={handleAnalysisCreated} />
         </div>
 
         <aside className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -37,9 +87,13 @@ export function App() {
 
       {analysis ? (
         <section className="mx-auto w-full max-w-6xl px-5 pb-12 md:px-8">
-          <AnalysisResult analysis={analysis} />
+          <AnalysisResult analysis={analysis} pollingError={pollingError} />
         </section>
       ) : null}
     </main>
   );
+}
+
+function isApiErrorResponse(value: AnalysisProgress | ApiErrorResponse): value is ApiErrorResponse {
+  return "error" in value && value.error !== undefined && "code" in value.error;
 }

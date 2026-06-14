@@ -2,11 +2,31 @@ import fastify, { type FastifyError, type FastifyInstance } from "fastify";
 
 import { registerAnalysisRoutes } from "./routes/analyses.js";
 import { registerHealthRoutes } from "./routes/health.js";
+import { AnalysisService } from "./services/analysis-service.js";
+import { createGitHubClient } from "./services/github/github-client.js";
+import { IssueService } from "./services/github/issue-service.js";
+import { PullRequestService } from "./services/github/pull-request-service.js";
+import { RepositoryService } from "./services/github/repository-service.js";
 
-export async function buildApp(): Promise<FastifyInstance> {
+export interface BuildAppOptions {
+  analysisService?: Pick<AnalysisService, "createAnalysis">;
+}
+
+function createDefaultAnalysisService(): AnalysisService {
+  const gitHubClient = createGitHubClient(process.env.GITHUB_TOKEN);
+
+  return new AnalysisService({
+    repositoryService: new RepositoryService(gitHubClient),
+    pullRequestService: new PullRequestService(gitHubClient),
+    issueService: new IssueService(gitHubClient)
+  });
+}
+
+export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = fastify({
     logger: false
   });
+  const analysisService = options.analysisService ?? createDefaultAnalysisService();
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     const statusCode = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
@@ -22,7 +42,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await registerHealthRoutes(app);
-  await registerAnalysisRoutes(app);
+  await registerAnalysisRoutes(app, analysisService);
 
   return app;
 }

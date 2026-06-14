@@ -1,10 +1,17 @@
-import type { CreateAnalysisResponse } from "@repopulse/shared";
+import type { AnalysisProgress } from "@repopulse/shared";
+
+import { Dashboard } from "./Dashboard.js";
 
 interface AnalysisResultProps {
-  analysis: CreateAnalysisResponse;
+  analysis: AnalysisProgress;
+  pollingError: string | null;
 }
 
-export function AnalysisResult({ analysis }: AnalysisResultProps) {
+export function AnalysisResult({ analysis, pollingError }: AnalysisResultProps) {
+  if (analysis.status === "completed" && analysis.report) {
+    return <Dashboard analysis={analysis} />;
+  }
+
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -38,9 +45,27 @@ export function AnalysisResult({ analysis }: AnalysisResultProps) {
         </div>
       </dl>
 
-      <p className="mt-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-        Full repository analysis will be available in the next milestone.
-      </p>
+      <div className="mt-5">
+        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-full rounded-full bg-emerald-600 transition-all"
+            style={{ width: `${analysis.progress}%` }}
+          />
+        </div>
+      </div>
+
+      {analysis.status === "failed" && analysis.error ? (
+        <p className="mt-5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {analysis.error.message}
+          {analysis.error.retryAt ? ` Try again after ${analysis.error.retryAt}.` : ""}
+        </p>
+      ) : null}
+
+      {pollingError ? (
+        <p className="mt-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {pollingError}
+        </p>
+      ) : null}
     </article>
   );
 }

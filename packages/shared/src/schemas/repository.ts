@@ -8,7 +8,8 @@ const repositoryPathSegmentSchema = z
   .regex(/^[A-Za-z0-9._-]+$/);
 
 export const createAnalysisRequestSchema = z.object({
-  repositoryUrl: z.string().trim().min(1, "Repository URL is required")
+  repositoryUrl: z.string().trim().min(1, "Repository URL is required"),
+  forceRefresh: z.boolean().optional()
 });
 
 export function parseGitHubRepositoryUrl(url: string): RepositoryIdentifier {

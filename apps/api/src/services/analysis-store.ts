@@ -1,36 +1,60 @@
 import { randomUUID } from "node:crypto";
 
-import type {
-  AnalysisProgress,
-  AnalysisStatus,
-  CreateAnalysisResponse,
-  RepositoryIdentifier
-} from "@repopulse/shared";
+import type { AnalysisProgress, AnalysisReport, RepositoryIdentifier } from "@repopulse/shared";
 
-interface StoredAnalysis extends AnalysisProgress {
-  repository: RepositoryIdentifier;
-}
+const analyses = new Map<string, AnalysisProgress>();
 
-const analyses = new Map<string, StoredAnalysis>();
-
-export function createQueuedAnalysis(repository: RepositoryIdentifier): CreateAnalysisResponse {
-  const analysisId = randomUUID();
-  const status: AnalysisStatus = "pending";
-
-  const analysis: StoredAnalysis = {
-    analysisId,
+export function createQueuedAnalysis(repository: RepositoryIdentifier): AnalysisProgress {
+  const analysis: AnalysisProgress = {
+    analysisId: randomUUID(),
     repository,
-    status,
+    status: "pending",
     progress: 0,
     currentStep: "Analysis queued"
   };
 
-  analyses.set(analysisId, analysis);
+  analyses.set(analysis.analysisId, analysis);
   return analysis;
 }
 
-export function getAnalysis(analysisId: string): CreateAnalysisResponse | undefined {
+export function createCompletedAnalysis(
+  repository: RepositoryIdentifier,
+  report: AnalysisReport
+): AnalysisProgress {
+  const analysis: AnalysisProgress = {
+    analysisId: randomUUID(),
+    repository,
+    status: "completed",
+    progress: 100,
+    currentStep: "Analysis completed",
+    report
+  };
+
+  analyses.set(analysis.analysisId, analysis);
+  return analysis;
+}
+
+export function getAnalysis(analysisId: string): AnalysisProgress | undefined {
   return analyses.get(analysisId);
+}
+
+export function updateAnalysis(
+  analysisId: string,
+  update: Partial<AnalysisProgress>
+): AnalysisProgress {
+  const existingAnalysis = analyses.get(analysisId);
+
+  if (!existingAnalysis) {
+    throw new Error("Analysis task was not found.");
+  }
+
+  const updatedAnalysis = {
+    ...existingAnalysis,
+    ...update
+  };
+
+  analyses.set(analysisId, updatedAnalysis);
+  return updatedAnalysis;
 }
 
 export function clearAnalyses(): void {

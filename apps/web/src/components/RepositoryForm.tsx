@@ -23,16 +23,23 @@ async function createAnalysis(repositoryUrl: string): Promise<CreateAnalysisResp
   const body = (await response.json()) as CreateAnalysisResponse | ApiErrorResponse;
 
   if (!response.ok) {
-    const message =
-      "error" in body ? body.error.message : "Unable to create a repository analysis.";
+    const message = isApiErrorResponse(body)
+      ? body.error.message
+      : "Unable to create a repository analysis.";
     throw new Error(message);
   }
 
-  if ("error" in body) {
+  if (isApiErrorResponse(body)) {
     throw new Error(body.error.message);
   }
 
   return body;
+}
+
+function isApiErrorResponse(
+  value: CreateAnalysisResponse | ApiErrorResponse
+): value is ApiErrorResponse {
+  return "error" in value && value.error !== undefined && "code" in value.error;
 }
 
 export function RepositoryForm({ onAnalysisCreated }: RepositoryFormProps) {

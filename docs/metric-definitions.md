@@ -1,31 +1,49 @@
 # Metric Definitions
 
-These metrics are planned for future RepoPulse milestones. They are not implemented in V0.1.
+RepoPulse V0.2 implements repository overview, pull request and issue metrics for public GitHub repositories. Commit, release, contributor, file hotspot and CI metrics are planned for later milestones.
 
-## PR Median Merge Time
+## PR Analysis Window
 
-The median time between pull request creation and merge. This helps describe review and delivery flow without overreacting to outliers.
+Pull request merge metrics use PRs whose `merged_at` timestamp falls within the last 90 days. The analysis uses UTC timestamps and a fixed `now` value inside each analysis run.
+
+## Average Merge Time
+
+Average merge time is the arithmetic mean of `merged_at - created_at` for merged pull requests in the analysis window. It is returned in hours. If no PRs were merged in the window, the value is `null`.
+
+## Median Merge Time
+
+Median merge time is the middle merge duration after sorting all merge durations in the analysis window. For an even number of values, RepoPulse averages the two middle values. It is returned in hours, or `null` when there is no data.
+
+## P75 Merge Time
+
+P75 merge time is the 75th percentile of merge durations in the analysis window, using linear interpolation between sorted values. It is returned in hours, or `null` when there is no data.
+
+## Open Pull Requests
+
+Open PR count is based on the open pull request sample collected for the repository. Oldest open PR is the largest age in whole UTC days among analyzed open PRs. If there are no open PRs, the oldest age is `null`.
+
+## Stale Issue
+
+A stale issue is an open GitHub issue that has not been updated for more than 30 days. Pull requests returned from the GitHub Issues API are excluded before calculating issue metrics.
 
 ## Stale Issue Ratio
 
-The percentage of open issues with no recent activity after a configured threshold. This helps identify backlog maintenance risk.
+Stale issue ratio is `staleIssues / analyzedOpenIssues`. If there are no analyzed open issues, the value is `null`.
 
-## Commit Activity
+## Issue Age Buckets
 
-The volume and distribution of commits over time. This can show whether a repository is active, dormant, or moving in bursts.
+Issue age is calculated from `created_at` to the analysis `now` timestamp in whole UTC days.
 
-## Release Frequency
+- `0-7 days`: ages 0 through 7
+- `8-30 days`: ages 8 through 30
+- `31-90 days`: ages 31 through 90
+- `90+ days`: ages 91 and above
 
-The cadence of tagged releases or GitHub Releases. This helps describe how often project changes are packaged for users.
+## Sampling Limitations
 
-## File Change Hotspots
+RepoPulse V0.2 limits analysis to avoid unbounded GitHub API requests:
 
-Files with high change frequency or repeated churn. Hotspots can indicate core modules, unstable areas, or places that may need refactoring attention.
+- Up to 200 pull requests per open/closed collection path
+- Up to 200 currently open issues after excluding pull requests
 
-## Contributor Concentration
-
-The share of recent activity performed by the most active contributors. High concentration can indicate ownership clarity, but it may also reveal bus factor risk.
-
-## CI Success Rate
-
-The percentage of recent workflow runs or checks that completed successfully. This helps estimate delivery confidence and test signal quality.
+When a collected dataset exceeds the cap, the report marks the related metric as sampled. Sampled metrics should be read as bounded analysis results, not complete repository history.
