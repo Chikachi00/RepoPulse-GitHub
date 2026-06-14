@@ -31,7 +31,11 @@ export function App() {
     const startedAt = Date.now();
     const poll = async () => {
       if (Date.now() - startedAt > 90_000) {
-        setPollingError("Analysis is still running. Polling stopped after 90 seconds.");
+        setPollingError(
+          analysis.status === "pending"
+            ? "The analysis is queued. Make sure the RepoPulse worker is running."
+            : "Analysis is still running. Polling stopped after 90 seconds."
+        );
         return;
       }
 

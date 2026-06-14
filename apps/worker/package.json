@@ -1,0 +1,24 @@
+{
+  "name": "@repopulse/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "npm run build -w @repopulse/shared && npm run build -w @repopulse/database && npm run build -w @repopulse/analysis-engine && tsx watch src/index.ts",
+    "build": "npm run build -w @repopulse/shared && npm run build -w @repopulse/database && npm run build -w @repopulse/analysis-engine && tsc -p tsconfig.json",
+    "typecheck": "npm run build -w @repopulse/shared && npm run build -w @repopulse/database && npm run build -w @repopulse/analysis-engine && tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "cleanup": "tsx src/cleanup.ts"
+  },
+  "dependencies": {
+    "@repopulse/analysis-engine": "0.1.0",
+    "@repopulse/database": "0.1.0",
+    "@repopulse/shared": "0.1.0",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.14"
+  }
+}

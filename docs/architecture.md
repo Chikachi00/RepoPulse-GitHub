@@ -1,14 +1,30 @@
 # RepoPulse Architecture
 
-RepoPulse is a TypeScript monorepo with a React web app, a Fastify API and a shared package for schemas, types and analysis configuration.
+RepoPulse is a TypeScript monorepo with a React web app, a Fastify API, a worker app, a database package, an analysis engine package and a shared package for schemas, types and analysis configuration.
 
 ## Request Flow
 
 ```text
-Web -> API -> Analysis Task -> GitHub Service -> Metrics -> In-memory Result
+Web -> API -> PostgreSQL AnalysisRun -> Worker -> RepositoryAnalyzer -> AnalysisReportRecord -> History API
 ```
 
-The API returns `202 Accepted` immediately after creating a task. The web app polls `GET /api/analyses/:analysisId` until the task is completed or failed.
+The API returns `202 Accepted` immediately after creating a database task. The web app polls `GET /api/analyses/:analysisId` until the worker marks the task completed or failed.
+
+## Persistent Queue Flow
+
+```text
+POST /api/analyses
+      ↓
+PostgreSQL AnalysisRun
+      ↓
+Worker claim with row lock
+      ↓
+RepositoryAnalyzer
+      ↓
+AnalysisReportRecord
+      ↓
+History API
+```
 
 ## GitHub Analysis Flow
 
@@ -27,7 +43,7 @@ Repository metadata
   -> In-memory report cache
 ```
 
-GitHub API access is isolated under `apps/api/src/services/github`. The route layer does not call Octokit directly. Service classes map GitHub responses into RepoPulse-owned internal types before metric calculators consume them.
+GitHub API access is isolated under `packages/analysis-engine/src/github`. The route layer does not call Octokit directly. Service classes map GitHub responses into RepoPulse-owned internal types before metric calculators consume them.
 
 ## Commit Detail Sampling
 
@@ -57,19 +73,18 @@ RepoPulse does not execute repository code, install repository dependencies, rea
 
 ## Metrics Layer
 
-Metric calculators live under `apps/api/src/services/metrics`. They are pure functions: they do not perform network requests, receive a fixed `now` value, avoid mutating input arrays and return safe values for empty or invalid inputs.
+Metric calculators live under `packages/analysis-engine/src/metrics`. They are pure functions: they do not perform network requests, receive a fixed `now` value, avoid mutating input arrays and return safe values for empty or invalid inputs.
 
 The health score is also calculated in the metrics layer. It uses already-computed metrics and static signals, excludes unavailable metrics, and renormalizes remaining category weights.
 
-## In-Memory Tasks and Cache
+## Persistent Tasks and Cache
 
-V0.4 still uses an in-memory task store and a 15-minute in-memory report cache. Cache keys include a V4 prefix so older report shapes are not reused.
+V0.5 stores tasks and reports in PostgreSQL. Cache reuse is based on the latest successful report for the same repository within the 15-minute TTL and matching `REPORT_SCHEMA_VERSION`.
 
 Current limitations:
 
-- Analysis tasks are lost when the API process restarts.
-- Cached reports are lost when the API process restarts.
-- The model is not suitable for multi-instance deployment.
-- Long-running work still runs inside the API process.
+- Worker scheduling is database-backed, not a dedicated queue system.
+- Reports are JSONB snapshots plus selected indexed fields.
+- Integration tests require a real PostgreSQL database and `TEST_DATABASE_URL`.
 
-Future versions should move tasks, cache and reports to PostgreSQL and execute analysis in a dedicated worker process.
+Future versions can add GitHub App installation records, webhooks, incremental refresh and scheduled analyses.

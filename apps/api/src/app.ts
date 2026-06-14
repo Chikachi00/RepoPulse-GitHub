@@ -1,51 +1,74 @@
+import { checkDatabaseConnection, DatabaseUnavailableError } from "@repopulse/database";
 import fastify, { type FastifyError, type FastifyInstance } from "fastify";
 
 import { registerAnalysisRoutes } from "./routes/analyses.js";
 import { registerHealthRoutes } from "./routes/health.js";
-import { AnalysisService } from "./services/analysis-service.js";
-import { CommitService } from "./services/github/commit-service.js";
-import { createGitHubClient } from "./services/github/github-client.js";
-import { IssueService } from "./services/github/issue-service.js";
-import { PullRequestService } from "./services/github/pull-request-service.js";
-import { ReleaseService } from "./services/github/release-service.js";
-import { RepositoryFileService } from "./services/github/repository-file-service.js";
-import { RepositoryService } from "./services/github/repository-service.js";
-import { RepositoryTreeService } from "./services/github/repository-tree-service.js";
-import { WorkflowService } from "./services/github/workflow-service.js";
+import { getAnalysis as getMemoryAnalysis } from "./services/analysis-store.js";
+import { PersistentAnalysisService } from "./services/persistent-analysis-service.js";
 
 export interface BuildAppOptions {
-  analysisService?: Pick<AnalysisService, "createAnalysis">;
-}
-
-function createDefaultAnalysisService(): AnalysisService {
-  const gitHubClient = createGitHubClient(process.env.GITHUB_TOKEN);
-
-  return new AnalysisService({
-    repositoryService: new RepositoryService(gitHubClient),
-    pullRequestService: new PullRequestService(gitHubClient),
-    issueService: new IssueService(gitHubClient),
-    commitService: new CommitService(gitHubClient),
-    releaseService: new ReleaseService(gitHubClient),
-    workflowService: new WorkflowService(gitHubClient),
-    repositoryTreeService: new RepositoryTreeService(gitHubClient),
-    repositoryFileService: new RepositoryFileService(gitHubClient),
-    usedAuthenticatedGitHubClient: gitHubClient.authenticated,
-    getRateLimitRemaining: () => gitHubClient.getRateLimitRemaining()
-  });
+  analysisService?: Partial<
+    Pick<
+      PersistentAnalysisService,
+      "createAnalysis" | "getAnalysis" | "getEvents" | "listHistory" | "getHistoricalReport"
+    >
+  >;
+  isDatabaseConnected?: () => Promise<boolean>;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = fastify({
     logger: false
   });
-  const analysisService = options.analysisService ?? createDefaultAnalysisService();
+  const isDatabaseConnected =
+    options.isDatabaseConnected ??
+    (options.analysisService ? async () => true : checkDatabaseConnection);
+  const injected = options.analysisService;
+  const persistentAnalysisService = injected ? null : new PersistentAnalysisService();
+  const analysisService = {
+    createAnalysis: injected?.createAnalysis
+      ? injected.createAnalysis.bind(injected)
+      : (persistentAnalysisService?.createAnalysis.bind(persistentAnalysisService) ??
+        (async () => {
+          throw new Error("Analysis creation is not configured.");
+        })),
+    getAnalysis: injected?.getAnalysis
+      ? injected.getAnalysis.bind(injected)
+      : persistentAnalysisService
+        ? persistentAnalysisService.getAnalysis.bind(persistentAnalysisService)
+        : async (analysisId: string) => getMemoryAnalysis(analysisId) ?? null,
+    getEvents: injected?.getEvents
+      ? injected.getEvents.bind(injected)
+      : persistentAnalysisService
+        ? persistentAnalysisService.getEvents.bind(persistentAnalysisService)
+        : async () => [],
+    listHistory: injected?.listHistory
+      ? injected.listHistory.bind(injected)
+      : persistentAnalysisService
+        ? persistentAnalysisService.listHistory.bind(persistentAnalysisService)
+        : async () => null,
+    getHistoricalReport: injected?.getHistoricalReport
+      ? injected.getHistoricalReport.bind(injected)
+      : persistentAnalysisService
+        ? persistentAnalysisService.getHistoricalReport.bind(persistentAnalysisService)
+        : async () => null
+  };
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
+    if (error instanceof DatabaseUnavailableError) {
+      return reply.code(503).send({
+        error: {
+          code: "DATABASE_UNAVAILABLE",
+          message: "Database is unavailable."
+        }
+      });
+    }
+
     const statusCode = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
     const message =
       statusCode >= 500 ? "Unexpected server error." : (error.message ?? "Invalid request.");
 
-    reply.code(statusCode).send({
+    return reply.code(statusCode).send({
       error: {
         code: statusCode >= 500 ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST",
         message
@@ -53,7 +76,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
   });
 
-  await registerHealthRoutes(app);
+  await registerHealthRoutes(app, isDatabaseConnected);
   await registerAnalysisRoutes(app, analysisService);
 
   return app;

@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: repopulse
+      POSTGRES_PASSWORD: repopulse
+      POSTGRES_DB: repopulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - repopulse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U repopulse -d repopulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  repopulse_postgres_data:

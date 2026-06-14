@@ -1,8 +1,10 @@
 export { ANALYSIS_CONFIG } from "./config/analysis-config.js";
+export { analysisReportSchema, parseAnalysisReport } from "./schemas/analysis-report.js";
 export { createAnalysisRequestSchema, parseGitHubRepositoryUrl } from "./schemas/repository.js";
 export type {
   AnalysisDataQuality,
   AnalysisDataScope,
+  AnalysisEventDto,
   AnalysisProgress,
   AnalysisReport,
   AnalysisStatus,
@@ -25,9 +27,12 @@ export type {
   IssueAgeBucket,
   IssueMetrics,
   LatestWorkflowRun,
+  MetricChange,
   PullRequestMetrics,
   ReleaseMetrics,
   ReleaseTrendPoint,
+  RepositoryHistoryItem,
+  RepositoryHistoryResponse,
   WorkflowRunTrendPoint,
   WorkflowSummary,
   RepositoryOverview,

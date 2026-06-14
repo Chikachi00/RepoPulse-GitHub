@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AnalysisRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  RETRY_WAIT
+  CANCELLED
+}
+
+model Repository {
+  id              String   @id @default(cuid())
+  githubId        BigInt?  @unique
+  owner           String
+  name            String
+  fullName        String
+  normalizedName  String   @unique
+  htmlUrl         String?
+  defaultBranch   String?
+  primaryLanguage String?
+  isArchived      Boolean  @default(false)
+  isFork          Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  lastAnalyzedAt DateTime?
+
+  analysisRuns AnalysisRun[]
+
+  @@index([owner, name])
+  @@index([lastAnalyzedAt])
+}
+
+model AnalysisRun {
+  id           String     @id @default(cuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  status       AnalysisRunStatus
+  progress     Int               @default(0)
+  currentStep  String
+  forceRefresh Boolean           @default(false)
+
+  attemptCount Int @default(0)
+  maxAttempts  Int @default(3)
+  priority     Int @default(0)
+
+  queuedAt    DateTime  @default(now())
+  claimedAt   DateTime?
+  heartbeatAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  availableAt DateTime  @default(now())
+
+  workerId     String?
+  errorCode    String?
+  errorMessage String?
+
+  report AnalysisReportRecord?
+  events AnalysisEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, availableAt, priority, queuedAt])
+  @@index([repositoryId, createdAt])
+  @@index([heartbeatAt])
+}
+
+model AnalysisReportRecord {
+  id            String      @id @default(cuid())
+  analysisRunId String      @unique
+  analysisRun   AnalysisRun @relation(fields: [analysisRunId], references: [id], onDelete: Cascade)
+
+  schemaVersion String
+  scoreVersion  String?
+  generatedAt   DateTime
+
+  healthScore Float?
+  healthGrade String?
+  confidence  String?
+
+  collaborationScore   Float?
+  activityScore        Float?
+  automationScore      Float?
+  projectHygieneScore  Float?
+
+  reportJson Json
+
+  createdAt DateTime @default(now())
+
+  @@index([generatedAt])
+  @@index([healthScore])
+}
+
+model AnalysisEvent {
+  id            String      @id @default(cuid())
+  analysisRunId String
+  analysisRun   AnalysisRun @relation(fields: [analysisRunId], references: [id], onDelete: Cascade)
+  eventType     String
+  progress      Int?
+  message       String
+  metadata      Json?
+  createdAt     DateTime    @default(now())
+
+  @@index([analysisRunId, createdAt])
+}

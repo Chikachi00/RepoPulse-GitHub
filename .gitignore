@@ -5,5 +5,8 @@ coverage/
 .env.*
 !.env.example
 *.log
+packages/shared/src/**/*.js
+packages/shared/src/**/*.js.map
+packages/shared/src/**/*.d.ts
 .DS_Store
 Thumbs.db

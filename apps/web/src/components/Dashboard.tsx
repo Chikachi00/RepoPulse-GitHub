@@ -1,10 +1,15 @@
 import { ExternalLink, GitFork, Star } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   AnalysisProgress,
+  AnalysisReport,
+  ApiErrorResponse,
   EngineeringSignal,
   FileHotspot,
-  IssueAgeBucket
+  IssueAgeBucket,
+  RepositoryHistoryItem,
+  RepositoryHistoryResponse
 } from "@repopulse/shared";
 
 interface DashboardProps {
@@ -66,6 +71,15 @@ function formatDurationSeconds(seconds: number | null): string {
 function formatMonth(value: string): string {
   const [year, month] = value.split("-");
   return `${year}-${month}`;
+}
+
+function formatDelta(value: number | null, suffix = ""): string {
+  if (value === null) {
+    return "No data";
+  }
+
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}${suffix}`;
 }
 
 function MetricCard({ label, value }: { label: string; value: string | number }) {
@@ -246,10 +260,112 @@ function AgeDistribution({ buckets }: { buckets: IssueAgeBucket[] }) {
 }
 
 export function Dashboard({ analysis }: DashboardProps) {
-  const report = analysis.report;
+  const latestReport = analysis.report;
+  const [historyItems, setHistoryItems] = useState<RepositoryHistoryItem[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historicalReport, setHistoricalReport] = useState<AnalysisReport | null>(null);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
-  if (!report) {
+  useEffect(() => {
+    if (!latestReport) {
+      return;
+    }
+
+    const repositoryForHistory = latestReport.repository;
+    const controller = new AbortController();
+
+    async function loadHistory() {
+      setHistoryError(null);
+
+      try {
+        const response = await fetch(
+          `/api/repositories/${repositoryForHistory.owner}/${repositoryForHistory.name}/history?limit=20`,
+          {
+            signal: controller.signal
+          }
+        );
+        const body = (await response.json()) as RepositoryHistoryResponse | ApiErrorResponse;
+
+        if (!response.ok || isApiErrorResponse(body)) {
+          throw new Error(
+            isApiErrorResponse(body) ? body.error.message : "Unable to load history."
+          );
+        }
+
+        setHistoryItems(body.items);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setHistoryError(error instanceof Error ? error.message : "Unable to load history.");
+        }
+      }
+    }
+
+    void loadHistory();
+
+    return () => controller.abort();
+  }, [latestReport]);
+
+  if (!latestReport) {
     return null;
+  }
+
+  const report = historicalReport ?? latestReport;
+  const previousHistoryItem = useMemo(
+    () =>
+      historyItems
+        .filter((item) => item.analysisId !== analysis.analysisId)
+        .sort((left, right) => Date.parse(right.generatedAt) - Date.parse(left.generatedAt))[0] ??
+      null,
+    [analysis.analysisId, historyItems]
+  );
+  const currentHistoryItem = historyItems.find((item) => item.analysisId === analysis.analysisId);
+  const healthScoreDelta =
+    currentHistoryItem && previousHistoryItem
+      ? (currentHistoryItem.healthScore ?? 0) - (previousHistoryItem.healthScore ?? 0)
+      : null;
+  const ciDelta =
+    currentHistoryItem?.ciSuccessRate !== null &&
+    currentHistoryItem?.ciSuccessRate !== undefined &&
+    previousHistoryItem?.ciSuccessRate !== null &&
+    previousHistoryItem?.ciSuccessRate !== undefined
+      ? (currentHistoryItem.ciSuccessRate - previousHistoryItem.ciSuccessRate) * 100
+      : null;
+  const staleDelta =
+    currentHistoryItem?.staleIssueRatio !== null &&
+    currentHistoryItem?.staleIssueRatio !== undefined &&
+    previousHistoryItem?.staleIssueRatio !== null &&
+    previousHistoryItem?.staleIssueRatio !== undefined
+      ? (currentHistoryItem.staleIssueRatio - previousHistoryItem.staleIssueRatio) * 100
+      : null;
+  const commitDelta =
+    currentHistoryItem && previousHistoryItem
+      ? currentHistoryItem.commitCount - previousHistoryItem.commitCount
+      : null;
+
+  async function loadSnapshot(item: RepositoryHistoryItem): Promise<void> {
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+
+    try {
+      const response = await fetch(
+        `/api/repositories/${repository.owner}/${repository.name}/history/${item.analysisId}`
+      );
+      const body = (await response.json()) as AnalysisReport | ApiErrorResponse;
+
+      if (!response.ok || isApiErrorResponse(body)) {
+        throw new Error(
+          isApiErrorResponse(body) ? body.error.message : "Unable to load historical snapshot."
+        );
+      }
+
+      setHistoricalReport(body);
+    } catch (error) {
+      setHistoryError(
+        error instanceof Error ? error.message : "Unable to load historical snapshot."
+      );
+    } finally {
+      setIsHistoryLoading(false);
+    }
   }
 
   const {
@@ -270,6 +386,18 @@ export function Dashboard({ analysis }: DashboardProps) {
   return (
     <div className="grid gap-6">
       <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        {historicalReport ? (
+          <div className="mb-4 flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+            <span>Historical snapshot generated at {formatDate(historicalReport.generatedAt)}</span>
+            <button
+              className="w-fit rounded-md border border-amber-300 px-3 py-1 font-medium"
+              onClick={() => setHistoricalReport(null)}
+              type="button"
+            >
+              Return to latest
+            </button>
+          </div>
+        ) : null}
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
             <p className="text-sm font-medium text-emerald-700">Analysis completed</p>
@@ -657,6 +785,81 @@ export function Dashboard({ analysis }: DashboardProps) {
           </ul>
         ) : null}
       </article>
+
+      <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-950">Analysis history</h2>
+        {historyError ? (
+          <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {historyError}
+          </p>
+        ) : null}
+        {historyItems.length <= 1 ? (
+          <p className="mt-3 text-sm text-slate-600">
+            Run more analyses over time to build a historical trend.
+          </p>
+        ) : (
+          <div className="mt-4 grid gap-4">
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricCard label="Health Score change" value={formatDelta(healthScoreDelta)} />
+              <MetricCard label="CI Success Rate change" value={formatDelta(ciDelta, "%")} />
+              <MetricCard label="Stale Issue Ratio change" value={formatDelta(staleDelta, "%")} />
+              <MetricCard label="Commit Activity change" value={formatDelta(commitDelta)} />
+            </dl>
+            <MiniBarChart
+              points={[...historyItems].reverse().map((item) => ({
+                label: formatDate(item.generatedAt),
+                title: `${formatDate(item.generatedAt)}: ${item.healthScore ?? "No data"}`,
+                value: item.healthScore ?? 0
+              }))}
+            />
+          </div>
+        )}
+        <div className="mt-4 overflow-x-auto rounded-md border border-slate-200">
+          <table className="min-w-[760px] w-full text-left text-sm">
+            <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Generated</th>
+                <th className="px-4 py-3">Health Score</th>
+                <th className="px-4 py-3">Grade</th>
+                <th className="px-4 py-3">Confidence</th>
+                <th className="px-4 py-3">CI success rate</th>
+                <th className="px-4 py-3">Commits</th>
+                <th className="px-4 py-3">Stale issues</th>
+                <th className="px-4 py-3">Snapshot</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyItems.map((item) => (
+                <tr className="border-b border-slate-100 last:border-0" key={item.analysisId}>
+                  <td className="px-4 py-3">{formatDate(item.generatedAt)}</td>
+                  <td className="px-4 py-3">{formatHealthScore(item.healthScore)}</td>
+                  <td className="px-4 py-3">{item.healthGrade ?? "No data"}</td>
+                  <td className="px-4 py-3">{item.confidence ?? "No data"}</td>
+                  <td className="px-4 py-3">{formatRatio(item.ciSuccessRate)}</td>
+                  <td className="px-4 py-3">{item.commitCount}</td>
+                  <td className="px-4 py-3">{formatRatio(item.staleIssueRatio)}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-1 text-sm font-medium text-slate-700 disabled:opacity-60"
+                      disabled={isHistoryLoading}
+                      onClick={() => void loadSnapshot(item)}
+                      type="button"
+                    >
+                      View snapshot
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
     </div>
   );
+}
+
+function isApiErrorResponse(
+  value: AnalysisReport | RepositoryHistoryResponse | ApiErrorResponse
+): value is ApiErrorResponse {
+  return "error" in value && value.error !== undefined && "code" in value.error;
 }

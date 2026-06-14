@@ -1,0 +1,23 @@
+{
+  "name": "@repopulse/analysis-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "npm run build -w @repopulse/shared && tsc -p tsconfig.json",
+    "typecheck": "npm run build -w @repopulse/shared && tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "@repopulse/shared": "0.1.0",
+    "undici": "^8.4.1",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.14"
+  }
+}

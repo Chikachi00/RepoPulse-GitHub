@@ -304,7 +304,8 @@ describe("RepoPulse API", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({
         status: "ok",
-        service: "repopulse-api"
+        service: "repopulse-api",
+        database: "connected"
       });
     });
 
@@ -350,7 +351,7 @@ describe("RepoPulse API", () => {
       expect(response.statusCode).toBe(404);
       expect(response.json()).toEqual({
         error: {
-          code: "NOT_FOUND",
+          code: "ANALYSIS_NOT_FOUND",
           message: "Analysis task was not found."
         }
       });

@@ -11,8 +11,18 @@
     "dev": "npm run dev --workspace=@repopulse/web",
     "dev:web": "npm run dev --workspace=@repopulse/web",
     "dev:api": "npm run dev --workspace=@repopulse/api",
+    "dev:worker": "npm run dev --workspace=@repopulse/worker",
+    "dev:services": "docker compose up -d postgres",
+    "dev:all": "concurrently -n api,worker,web \"npm run dev:api\" \"npm run dev:worker\" \"npm run dev:web\"",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset",
+    "db:seed": "npm run seed --workspace=@repopulse/database",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:integration": "npm run test:integration --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css,html}\"",
@@ -30,5 +40,10 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.0",
     "vitest": "^4.0.14"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.8.0",
+    "concurrently": "^10.0.3",
+    "prisma": "^7.8.0"
   }
 }

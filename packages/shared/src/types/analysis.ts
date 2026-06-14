@@ -310,3 +310,38 @@ export interface ApiErrorResponse {
     retryAt?: string;
   };
 }
+
+export interface RepositoryHistoryItem {
+  analysisId: string;
+  generatedAt: string;
+  healthScore: number | null;
+  healthGrade: string | null;
+  confidence: string | null;
+  collaborationScore: number | null;
+  activityScore: number | null;
+  automationScore: number | null;
+  projectHygieneScore: number | null;
+  mergedPullRequests: number;
+  staleIssueRatio: number | null;
+  commitCount: number;
+  ciSuccessRate: number | null;
+}
+
+export interface RepositoryHistoryResponse {
+  repository: RepositoryIdentifier;
+  items: RepositoryHistoryItem[];
+  nextCursor: string | null;
+}
+
+export interface AnalysisEventDto {
+  eventType: string;
+  progress: number | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface MetricChange {
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+}
