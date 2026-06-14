@@ -12,5 +12,13 @@ export const ANALYSIS_CONFIG = {
   maxContributorRows: 10,
   maxReleasesAnalyzed: 30,
   releaseTrendMonths: 12,
-  minimumRemainingRateLimit: 10
+  minimumRemainingRateLimit: 10,
+  ciWindowDays: 90,
+  maxWorkflowRunsAnalyzed: 100,
+  maxWorkflowsAnalyzed: 30,
+  maxWorkflowFilesRead: 20,
+  maxRepositoryTreeEntriesUsed: 100_000,
+  maxEvidencePathsPerSignal: 5,
+  minimumCompletedRunsForReliableCiRate: 5,
+  healthScoreVersion: "v1"
 } as const;

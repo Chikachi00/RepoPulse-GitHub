@@ -8,7 +8,10 @@ import { createGitHubClient } from "./services/github/github-client.js";
 import { IssueService } from "./services/github/issue-service.js";
 import { PullRequestService } from "./services/github/pull-request-service.js";
 import { ReleaseService } from "./services/github/release-service.js";
+import { RepositoryFileService } from "./services/github/repository-file-service.js";
 import { RepositoryService } from "./services/github/repository-service.js";
+import { RepositoryTreeService } from "./services/github/repository-tree-service.js";
+import { WorkflowService } from "./services/github/workflow-service.js";
 
 export interface BuildAppOptions {
   analysisService?: Pick<AnalysisService, "createAnalysis">;
@@ -23,6 +26,9 @@ function createDefaultAnalysisService(): AnalysisService {
     issueService: new IssueService(gitHubClient),
     commitService: new CommitService(gitHubClient),
     releaseService: new ReleaseService(gitHubClient),
+    workflowService: new WorkflowService(gitHubClient),
+    repositoryTreeService: new RepositoryTreeService(gitHubClient),
+    repositoryFileService: new RepositoryFileService(gitHubClient),
     usedAuthenticatedGitHubClient: gitHubClient.authenticated,
     getRateLimitRemaining: () => gitHubClient.getRateLimitRemaining()
   });

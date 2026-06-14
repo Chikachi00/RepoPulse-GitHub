@@ -2,7 +2,7 @@ import { Octokit, type RestEndpointMethodTypes } from "@octokit/rest";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
 
 export const GITHUB_API_VERSION = "2022-11-28";
-export const GITHUB_USER_AGENT = "RepoPulse/0.3";
+export const GITHUB_USER_AGENT = "RepoPulse/0.4";
 
 export type GitHubRepositoryResponse = RestEndpointMethodTypes["repos"]["get"]["response"]["data"];
 export type GitHubPullRequestResponse =
@@ -15,12 +15,25 @@ export type GitHubCommitDetailResponse =
   RestEndpointMethodTypes["repos"]["getCommit"]["response"]["data"];
 export type GitHubReleaseResponse =
   RestEndpointMethodTypes["repos"]["listReleases"]["response"]["data"][number];
+export type GitHubWorkflowResponse =
+  RestEndpointMethodTypes["actions"]["listRepoWorkflows"]["response"]["data"]["workflows"][number];
+export type GitHubWorkflowRunResponse =
+  RestEndpointMethodTypes["actions"]["listWorkflowRunsForRepo"]["response"]["data"]["workflow_runs"][number];
+export type GitHubTreeResponse = RestEndpointMethodTypes["git"]["getTree"]["response"]["data"];
+export type GitHubContentResponse =
+  RestEndpointMethodTypes["repos"]["getContent"]["response"]["data"];
 type GetRepositoryParameters = RestEndpointMethodTypes["repos"]["get"]["parameters"];
 type ListPullRequestsParameters = RestEndpointMethodTypes["pulls"]["list"]["parameters"];
 type ListIssuesParameters = RestEndpointMethodTypes["issues"]["listForRepo"]["parameters"];
 type ListCommitsParameters = RestEndpointMethodTypes["repos"]["listCommits"]["parameters"];
 type GetCommitParameters = RestEndpointMethodTypes["repos"]["getCommit"]["parameters"];
 type ListReleasesParameters = RestEndpointMethodTypes["repos"]["listReleases"]["parameters"];
+type ListRepoWorkflowsParameters =
+  RestEndpointMethodTypes["actions"]["listRepoWorkflows"]["parameters"];
+type ListWorkflowRunsParameters =
+  RestEndpointMethodTypes["actions"]["listWorkflowRunsForRepo"]["parameters"];
+type GetTreeParameters = RestEndpointMethodTypes["git"]["getTree"]["parameters"];
+type GetContentParameters = RestEndpointMethodTypes["repos"]["getContent"]["parameters"];
 type RateLimitResponse = RestEndpointMethodTypes["rateLimit"]["get"]["response"]["data"];
 type ResponseHeaders = Record<string, string | number | undefined>;
 
@@ -39,6 +52,24 @@ interface OctokitLike {
       listReleases(
         parameters: ListReleasesParameters
       ): Promise<{ data: GitHubReleaseResponse[]; headers?: ResponseHeaders }>;
+      getContent(
+        parameters: GetContentParameters
+      ): Promise<{ data: GitHubContentResponse; headers?: ResponseHeaders }>;
+    };
+    actions: {
+      listRepoWorkflows(parameters: ListRepoWorkflowsParameters): Promise<{
+        data: { workflows: GitHubWorkflowResponse[]; total_count: number };
+        headers?: ResponseHeaders;
+      }>;
+      listWorkflowRunsForRepo(parameters: ListWorkflowRunsParameters): Promise<{
+        data: { workflow_runs: GitHubWorkflowRunResponse[]; total_count: number };
+        headers?: ResponseHeaders;
+      }>;
+    };
+    git: {
+      getTree(
+        parameters: GetTreeParameters
+      ): Promise<{ data: GitHubTreeResponse; headers?: ResponseHeaders }>;
     };
     pulls: {
       list(
@@ -90,6 +121,34 @@ export interface ListReleasesOptions {
   maxItems: number;
 }
 
+export interface ListWorkflowsOptions {
+  owner: string;
+  repo: string;
+  maxItems: number;
+}
+
+export interface ListWorkflowRunsOptions {
+  owner: string;
+  repo: string;
+  branch: string;
+  created: string;
+  maxItems: number;
+}
+
+export interface GetRepositoryTreeOptions {
+  owner: string;
+  repo: string;
+  treeSha: string;
+  recursive: boolean;
+}
+
+export interface GetFileContentOptions {
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+}
+
 export interface GitHubClient {
   readonly authenticated: boolean;
   getRepository(owner: string, repo: string): Promise<GitHubRepositoryResponse>;
@@ -98,6 +157,10 @@ export interface GitHubClient {
   listCommits(options: ListCommitsOptions): Promise<GitHubCommitResponse[]>;
   getCommitDetail(options: GetCommitDetailOptions): Promise<GitHubCommitDetailResponse>;
   listReleases(options: ListReleasesOptions): Promise<GitHubReleaseResponse[]>;
+  listWorkflows(options: ListWorkflowsOptions): Promise<GitHubWorkflowResponse[]>;
+  listWorkflowRuns(options: ListWorkflowRunsOptions): Promise<GitHubWorkflowRunResponse[]>;
+  getRepositoryTree(options: GetRepositoryTreeOptions): Promise<GitHubTreeResponse>;
+  getFileContent(options: GetFileContentOptions): Promise<string | null>;
   getRateLimitRemaining(): number | null;
   refreshRateLimitRemaining(): Promise<number | null>;
 }
@@ -328,6 +391,118 @@ export class OctokitGitHubClient implements GitHubClient {
     }
 
     return releases;
+  }
+
+  async listWorkflows({
+    owner,
+    repo,
+    maxItems
+  }: ListWorkflowsOptions): Promise<GitHubWorkflowResponse[]> {
+    const workflows: GitHubWorkflowResponse[] = [];
+    let page = 1;
+
+    while (workflows.length < maxItems) {
+      const response = await this.octokit.rest.actions.listRepoWorkflows({
+        owner,
+        repo,
+        per_page: Math.min(100, maxItems - workflows.length),
+        page,
+        headers: {
+          "X-GitHub-Api-Version": GITHUB_API_VERSION
+        }
+      });
+
+      this.updateRateLimit(response.headers);
+      workflows.push(...response.data.workflows);
+
+      if (response.data.workflows.length < 100) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return workflows;
+  }
+
+  async listWorkflowRuns({
+    owner,
+    repo,
+    branch,
+    created,
+    maxItems
+  }: ListWorkflowRunsOptions): Promise<GitHubWorkflowRunResponse[]> {
+    const runs: GitHubWorkflowRunResponse[] = [];
+    let page = 1;
+
+    while (runs.length < maxItems) {
+      const response = await this.octokit.rest.actions.listWorkflowRunsForRepo({
+        owner,
+        repo,
+        branch,
+        created,
+        per_page: Math.min(100, maxItems - runs.length),
+        page,
+        headers: {
+          "X-GitHub-Api-Version": GITHUB_API_VERSION
+        }
+      });
+
+      this.updateRateLimit(response.headers);
+      runs.push(...response.data.workflow_runs);
+
+      if (response.data.workflow_runs.length < 100) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return runs;
+  }
+
+  async getRepositoryTree({
+    owner,
+    repo,
+    treeSha,
+    recursive
+  }: GetRepositoryTreeOptions): Promise<GitHubTreeResponse> {
+    const response = await this.octokit.rest.git.getTree({
+      owner,
+      repo,
+      tree_sha: treeSha,
+      recursive: recursive ? "true" : undefined,
+      headers: {
+        "X-GitHub-Api-Version": GITHUB_API_VERSION
+      }
+    });
+
+    this.updateRateLimit(response.headers);
+    return response.data;
+  }
+
+  async getFileContent({ owner, repo, path, ref }: GetFileContentOptions): Promise<string | null> {
+    const response = await this.octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path,
+      ref,
+      headers: {
+        "X-GitHub-Api-Version": GITHUB_API_VERSION
+      }
+    });
+
+    this.updateRateLimit(response.headers);
+
+    if (
+      Array.isArray(response.data) ||
+      response.data.type !== "file" ||
+      !("content" in response.data)
+    ) {
+      return null;
+    }
+
+    return Buffer.from(response.data.content, "base64").toString("utf8");
   }
 
   getRateLimitRemaining(): number | null {

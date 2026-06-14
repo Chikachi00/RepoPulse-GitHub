@@ -1,6 +1,6 @@
 # Metric Definitions
 
-RepoPulse V0.3 implements repository overview, PR, issue, commit, file hotspot, contributor and release metrics for public GitHub repositories.
+RepoPulse V0.4 implements repository overview, PR, issue, commit, file hotspot, contributor, release, CI, engineering practice and explainable health score metrics for public GitHub repositories.
 
 ## Commit Window
 
@@ -32,7 +32,7 @@ The score ranges from 0 to 1 and is a change concentration signal, not a code qu
 
 ## Ignored Hotspot Files
 
-Hotspot ranking ignores common generated or noisy paths such as `node_modules/**`, `dist/**`, `build/**`, `coverage/**`, lockfiles, and minified JS/CSS. Ignoring affects hotspot ranking only; it does not mean those files were never changed.
+Hotspot ranking ignores common generated or noisy paths such as `node_modules/**`, `dist/**`, `build/**`, `coverage/**`, lockfiles and minified JS/CSS. Ignoring affects hotspot ranking only; it does not mean those files were never changed.
 
 ## Suspected Fix Touch
 
@@ -58,6 +58,34 @@ A stable release is a published GitHub Release that is not marked as a prereleas
 
 Release interval is the number of days between consecutive stable GitHub Releases ordered by published time. Average and median intervals are `null` when fewer than two stable releases are available.
 
+## CI Window
+
+CI metrics use GitHub Actions workflow runs from the repository default branch in the most recent 90 days. At most 100 workflow runs are analyzed.
+
+## CI Success Rate
+
+CI success rate is `successfulRuns / (successfulRuns + failedRuns)`. Failed runs include `failure`, `timed_out` and `action_required`. Cancelled, skipped, neutral, running and unknown runs are excluded from the denominator.
+
+## Reliable CI Sample
+
+The CI success rate is marked reliable only when at least five completed success/failure runs are available. A smaller sample is still shown but flagged in data quality.
+
+## Workflow Duration
+
+Workflow duration uses `run_started_at` when available, otherwise `created_at`, and ends at `updated_at`. Invalid or negative durations are skipped.
+
+## Engineering Practice Signals
+
+Engineering signals are static evidence checks grouped into testing, quality, automation, documentation, governance and security. A signal can be `present`, `partial`, `missing` or `unknown`. Unknown signals are not treated as missing in the health score.
+
+## Test Detection
+
+Test file detection uses path rules for common ecosystems, including `.test` and `.spec` JavaScript/TypeScript files, `__tests__`, Python `test_*.py`, Go `_test.go`, Rust `tests/`, and Java/Kotlin `src/test`. The rules avoid broad substring matching, so names like `contest.ts`, `latest.ts` and `testimonials.json` are not counted as tests.
+
+## Health Score
+
+The health score is defined in `docs/health-score-methodology.md`. It is category based, explainable, versioned and excludes unavailable metrics before calculating an overall score.
+
 ## Sampling Limitations
 
 RepoPulse caps data collection to control GitHub API cost:
@@ -67,5 +95,9 @@ RepoPulse caps data collection to control GitHub API cost:
 - Up to 200 listed commits
 - Up to 60 commit details with a token, or 20 without one
 - Up to 30 GitHub Releases
+- Up to 30 workflow records
+- Up to 100 workflow runs
+- Up to 20 workflow files for static command detection
+- Up to 100,000 repository tree entries for static practice detection
 
 Sampled metrics should be read as bounded recent activity signals, not complete repository history.

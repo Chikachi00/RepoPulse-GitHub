@@ -1,6 +1,11 @@
 import { ExternalLink, GitFork, Star } from "lucide-react";
 
-import type { AnalysisProgress, FileHotspot, IssueAgeBucket } from "@repopulse/shared";
+import type {
+  AnalysisProgress,
+  EngineeringSignal,
+  FileHotspot,
+  IssueAgeBucket
+} from "@repopulse/shared";
 
 interface DashboardProps {
   analysis: AnalysisProgress;
@@ -42,6 +47,22 @@ function formatScore(value: number): string {
   return value.toFixed(2);
 }
 
+function formatHealthScore(value: number | null): string {
+  return value === null ? "Insufficient data" : value.toFixed(1);
+}
+
+function formatDurationSeconds(seconds: number | null): string {
+  if (seconds === null) {
+    return "No data";
+  }
+
+  if (seconds >= 3600) {
+    return `${(seconds / 3600).toFixed(1)} hours`;
+  }
+
+  return `${Math.round(seconds / 60)} min`;
+}
+
 function formatMonth(value: string): string {
   const [year, month] = value.split("-");
   return `${year}-${month}`;
@@ -53,6 +74,21 @@ function MetricCard({ label, value }: { label: string; value: string | number })
       <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
       <dd className="mt-2 text-2xl font-semibold text-slate-950">{value}</dd>
     </div>
+  );
+}
+
+function StatusPill({ status }: { status: EngineeringSignal["status"] }) {
+  const tone = {
+    present: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    partial: "border-amber-200 bg-amber-50 text-amber-800",
+    missing: "border-slate-200 bg-slate-100 text-slate-700",
+    unknown: "border-slate-200 bg-white text-slate-500"
+  }[status];
+
+  return (
+    <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-semibold ${tone}`}>
+      {status}
+    </span>
   );
 }
 
@@ -224,6 +260,9 @@ export function Dashboard({ analysis }: DashboardProps) {
     fileHotspots,
     contributors,
     releases,
+    ci,
+    engineeringPractices,
+    healthScore,
     dataScope,
     dataQuality
   } = report;
@@ -272,6 +311,55 @@ export function Dashboard({ analysis }: DashboardProps) {
           <span>{repository.isArchived ? "Archived" : "Active"}</span>
         </div>
       </article>
+
+      <section className="grid gap-3 lg:grid-cols-[minmax(260px,0.7fr)_minmax(0,1.3fr)]">
+        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm font-medium text-emerald-700">RepoPulse Health Score</p>
+          <div className="mt-2 flex items-end gap-3">
+            <span className="text-5xl font-semibold text-slate-950">
+              {formatHealthScore(healthScore.overallScore)}
+            </span>
+            {healthScore.grade ? (
+              <span className="mb-2 rounded-md bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-700">
+                Grade {healthScore.grade}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            Explainable score based on collaboration, activity, automation and project hygiene.
+            Confidence: {healthScore.confidence}.
+          </p>
+        </article>
+        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-950">Category scores</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {healthScore.categories.map((category) => (
+              <div className="rounded-md border border-slate-100 p-3" key={category.id}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-slate-800">{category.label}</span>
+                  <span className="font-semibold text-slate-950">
+                    {formatHealthScore(category.score)}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-500">{category.summary}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      {healthScore.recommendations.length > 0 ? (
+        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-950">Recommendations</h2>
+          <ul className="mt-3 grid gap-2 text-sm text-slate-700">
+            {healthScore.recommendations.map((recommendation) => (
+              <li className="rounded-md border border-slate-100 px-3 py-2" key={recommendation}>
+                {recommendation}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ) : null}
 
       <section>
         <h2 className="mb-3 text-lg font-semibold text-slate-950">Pull request metrics</h2>
@@ -406,6 +494,81 @@ export function Dashboard({ analysis }: DashboardProps) {
       </section>
 
       <section>
+        <h2 className="mb-3 text-lg font-semibold text-slate-950">CI overview</h2>
+        <dl className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard label="Workflows configured" value={ci.workflowsConfigured} />
+          <MetricCard label="Active workflows" value={ci.activeWorkflows} />
+          <MetricCard label="Runs analyzed" value={ci.analyzedRuns} />
+          <MetricCard label="Success rate" value={formatRatio(ci.successRate)} />
+          <MetricCard label="Completed runs" value={ci.completedRuns} />
+          <MetricCard label="Failed runs" value={ci.failedRuns} />
+          <MetricCard
+            label="Median duration"
+            value={formatDurationSeconds(ci.medianDurationSeconds)}
+          />
+          <MetricCard
+            label="Latest run"
+            value={
+              ci.latestRun
+                ? `${ci.latestRun.workflowName}: ${ci.latestRun.conclusion ?? ci.latestRun.status}`
+                : "No data"
+            }
+          />
+        </dl>
+        {ci.workflowsConfigured === 0 ? (
+          <p className="rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-600">
+            No GitHub Actions workflows were detected.
+          </p>
+        ) : (
+          <MiniBarChart
+            points={ci.weeklyTrend.map((point) => ({
+              label: point.weekStart.slice(5),
+              title: `${point.weekStart}: ${point.successfulRuns} successful, ${point.failedRuns} failed`,
+              value: point.totalRuns
+            }))}
+          />
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-slate-950">Engineering practices</h2>
+        <div className="rounded-md border border-slate-200 bg-white p-4">
+          <dl className="grid gap-3 text-sm text-slate-700 sm:grid-cols-2 lg:grid-cols-4">
+            <div>Test files: {engineeringPractices.testFileCount}</div>
+            <div>
+              Test frameworks:{" "}
+              {engineeringPractices.testFrameworks.length > 0
+                ? engineeringPractices.testFrameworks.join(", ")
+                : "No data"}
+            </div>
+            <div>Workflow files read: {engineeringPractices.workflowFilesAnalyzed}</div>
+            <div>Repository files scanned: {engineeringPractices.repositoryFilesAnalyzed}</div>
+          </dl>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {engineeringPractices.signals.map((signal) => (
+              <div className="rounded-md border border-slate-100 p-3" key={signal.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{signal.label}</p>
+                    <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">
+                      {signal.category}
+                    </p>
+                  </div>
+                  <StatusPill status={signal.status} />
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{signal.summary}</p>
+                {signal.evidence.length > 0 ? (
+                  <p className="mt-2 break-words font-mono text-xs text-slate-500">
+                    {signal.evidence.map((item) => item.path).join(", ")}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section>
         <h2 className="mb-3 text-lg font-semibold text-slate-950">Issue metrics</h2>
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.8fr)]">
           <dl className="grid gap-3 sm:grid-cols-2">
@@ -428,6 +591,8 @@ export function Dashboard({ analysis }: DashboardProps) {
           <div>Commit window: {dataScope.commitWindowWeeks} weeks</div>
           <div>Commit details: {commits.detailedCommitsAnalyzed}</div>
           <div>Releases analyzed: {dataScope.maxReleasesAnalyzed}</div>
+          <div>CI window: {dataScope.ciWindowDays} days</div>
+          <div>Workflow runs cap: {dataScope.maxWorkflowRunsAnalyzed}</div>
           <div>Generated at: {formatDate(report.generatedAt)}</div>
         </dl>
         <p className="mt-4 text-sm leading-6 text-slate-600">
@@ -453,12 +618,26 @@ export function Dashboard({ analysis }: DashboardProps) {
           </div>
           <div>Commits listed: {commits.listedCommits}</div>
           <div>Commit details analyzed: {commits.detailedCommitsAnalyzed}</div>
+          <div>Workflow runs analyzed: {ci.analyzedRuns}</div>
+          <div>Workflow files analyzed: {engineeringPractices.workflowFilesAnalyzed}</div>
+          <div>Repository tree truncated: {dataQuality.repositoryTreeTruncated ? "Yes" : "No"}</div>
           <div>Rate limit remaining: {dataQuality.rateLimitRemaining ?? "Unknown"}</div>
         </dl>
         <p className="mt-4 text-sm leading-6 text-slate-600">
           File hotspot rankings ignore generated and dependency files. Release metrics only count
-          published GitHub Releases, not plain Git tags.
+          published GitHub Releases, not plain Git tags. Engineering practice checks are static
+          heuristics based on paths and selected configuration files.
         </p>
+        {dataQuality.ciSampleTooSmall ? (
+          <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            CI success rate is based on too few completed runs to be considered reliable.
+          </p>
+        ) : null}
+        {dataQuality.workflowFileReadLimitReached ? (
+          <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Workflow file inspection reached the configured read limit.
+          </p>
+        ) : null}
         {dataQuality.commitDetailsLimitedByRateLimit ? (
           <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             Commit file analysis stopped early because the GitHub API rate limit was nearly

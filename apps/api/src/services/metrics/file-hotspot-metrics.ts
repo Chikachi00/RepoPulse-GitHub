@@ -2,6 +2,7 @@ import { ANALYSIS_CONFIG, type FileHotspot, type FileHotspotMetrics } from "@rep
 
 import { roundMetric } from "./statistics.js";
 import type { CommitSummary } from "./commit-metrics.js";
+import { shouldIgnoreHotspotFile } from "./repository-file-rules.js";
 
 export interface CommitFileChange {
   path: string;
@@ -26,37 +27,7 @@ interface FileAggregate {
   suspectedFixTouches: number;
 }
 
-const ignoredDirectoryPrefixes = [
-  "node_modules/",
-  "dist/",
-  "build/",
-  "coverage/",
-  "vendor/",
-  ".next/",
-  ".cache/"
-];
-const ignoredExactFiles = [
-  "package-lock.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb"
-];
-
-export function shouldIgnoreHotspotFile(path: string): boolean {
-  const normalizedPath = path.replaceAll("\\", "/").replace(/^\/+/, "");
-  const filename = normalizedPath.split("/").at(-1) ?? normalizedPath;
-
-  if (ignoredDirectoryPrefixes.some((prefix) => normalizedPath.startsWith(prefix))) {
-    return true;
-  }
-
-  if (ignoredExactFiles.includes(filename)) {
-    return true;
-  }
-
-  return /\.min\.(js|css)$/i.test(filename);
-}
+export { shouldIgnoreHotspotFile } from "./repository-file-rules.js";
 
 export function isSuspectedFixCommit(message: string): boolean {
   if (message.trim().length === 0) {

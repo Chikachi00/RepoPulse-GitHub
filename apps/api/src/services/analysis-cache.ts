@@ -1,6 +1,6 @@
 import { ANALYSIS_CONFIG, type AnalysisReport, type RepositoryIdentifier } from "@repopulse/shared";
 
-export const ANALYSIS_CACHE_VERSION = "v3";
+export const ANALYSIS_CACHE_VERSION = "v4";
 
 interface CachedReport {
   report: AnalysisReport;

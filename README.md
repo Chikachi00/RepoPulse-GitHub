@@ -1,10 +1,10 @@
 # RepoPulse
 
-RepoPulse is a GitHub repository health analytics platform. A user enters a public GitHub repository URL, and RepoPulse creates an asynchronous analysis task that fetches GitHub data and renders repository, pull request, issue, commit, file hotspot, contributor and release signals.
+RepoPulse is a GitHub repository health analytics platform. A user enters a public GitHub repository URL, and RepoPulse creates an asynchronous analysis task that fetches GitHub data and renders repository, collaboration, activity, automation, release and engineering practice signals.
 
 ## Current Status
 
-V0.3 commit and repository activity analytics. This version still uses in-memory tasks and cache; it does not include PostgreSQL, Redis, a worker process, authentication, private repository support, CI analysis or an AI summary.
+V0.4 CI, testing practices and explainable health scoring. This version still uses in-memory tasks and cache; it does not include PostgreSQL, Redis, a worker process, authentication, private repository support, dependency freshness analysis, GitHub App integration or AI summaries.
 
 ## Supported Metrics
 
@@ -16,8 +16,9 @@ V0.3 commit and repository activity analytics. This version still uses in-memory
 - Suspected fix hotspots: commit-message heuristic for likely fix-related changes
 - Contributors: recent commit concentration, top contributor share, top 3 share and HHI
 - Releases: latest GitHub Release, stable/prerelease counts, release intervals and 12-month trend
-
-RepoPulse does not calculate a combined health score in V0.3 because CI, dependency, historical snapshot and organizational context are not implemented yet.
+- CI: GitHub Actions workflow detection, recent run success rate, reliability flag, median duration and weekly run trend
+- Engineering practices: static test, lint, typecheck, build, coverage, documentation, governance and security signals
+- Health score: explainable category scores and a renormalized overall grade when enough evidence exists
 
 ## Analysis Scope
 
@@ -26,9 +27,11 @@ RepoPulse does not calculate a combined health score in V0.3 because CI, depende
 - Commit activity uses the repository default branch and a 12-week UTC window.
 - Commit listing is capped at 200 commits.
 - Commit file details are sampled: 60 non-merge commits with `GITHUB_TOKEN`, 20 without it.
-- File hotspot rankings ignore dependency, build, coverage and lock files.
+- CI metrics use default-branch GitHub Actions runs from the last 90 days, capped at 100 runs.
+- Workflow detection reads up to 30 workflow records and up to 20 workflow files for static command checks.
+- Repository tree static detection caps input at 100,000 entries.
 - Releases count published GitHub Releases only; plain Git tags without a GitHub Release are not included.
-- Reports are cached in memory for 15 minutes using a V3 cache key.
+- Reports are cached in memory for 15 minutes using a V4 cache key.
 
 ## File Hotspot Methodology
 
@@ -45,9 +48,24 @@ The score is a change concentration signal, not a code quality score.
 
 Suspected fix hotspots are based on commit messages containing words such as `fix`, `bug`, `hotfix`, `regression`, `crash`, `error`, or Chinese terms such as `修复`, `故障`, `回归`. English terms use word boundaries so words like `prefix` and `fixture` are not treated as fixes. This heuristic does not prove that a file is defective.
 
+## CI and Practice Detection
+
+RepoPulse detects GitHub Actions workflows and inspects recent workflow runs without using the Dependabot Alerts API or executing repository code. Static engineering practice detection reads selected config files such as `package.json`, common language build files and `.github/workflows/*.yml`. It uses path and command heuristics, so results should be treated as evidence signals rather than a formal audit.
+
+## Health Score
+
+The health score is explainable and category based:
+
+- Collaboration: PR merge time and stale issue ratio
+- Activity: active commit weeks, recent push and stable release recency
+- Automation and testing: CI configuration, CI success rate, tests and quality automation
+- Project hygiene: README, license, governance, templates, security policy, dependency automation and changelog
+
+Unknown metrics are excluded and remaining category weights are renormalized. RepoPulse requires at least two valid categories before returning an overall score.
+
 ## Rate Limit Behavior
 
-`GITHUB_TOKEN` is optional. Without it, RepoPulse still analyzes public repositories, but anonymous GitHub API rate limits are lower and commit detail sampling is smaller. If the remaining rate limit approaches the reserve threshold, RepoPulse stops commit detail inspection early, keeps the completed core report, and shows a warning in the dashboard.
+`GITHUB_TOKEN` is optional. Without it, RepoPulse still analyzes public repositories, but anonymous GitHub API rate limits are lower and commit detail sampling is smaller. If the remaining rate limit approaches the reserve threshold, RepoPulse stops commit detail inspection early, keeps the completed report, and shows a warning in the dashboard.
 
 ## Tech Stack
 
@@ -55,7 +73,7 @@ Suspected fix hotspots are based on commit messages containing words such as `fi
 - React, TypeScript, Vite and Tailwind CSS
 - Node.js and Fastify
 - Official Octokit JavaScript client
-- Zod
+- Zod and YAML parsing
 - Vitest
 - ESLint and Prettier
 
@@ -78,7 +96,7 @@ API_PORT=3001
 GITHUB_TOKEN=
 ```
 
-Do not commit `.env` or real tokens.
+Do not commit `.env` or real tokens. Anonymous requests may hit GitHub rate limits more quickly.
 
 ## Quality Commands
 
@@ -92,12 +110,12 @@ npm run build
 
 ## Roadmap
 
-- Add CI and testing practice analysis
 - Add PostgreSQL persistence
 - Move analysis work to a dedicated worker
 - Store historical snapshots
+- Add CI log and test engineering practice depth
 - Add GitHub App integration and private repository support
-- Add a carefully scoped composite health score
+- Add carefully versioned score history and comparison
 
 ## License
 

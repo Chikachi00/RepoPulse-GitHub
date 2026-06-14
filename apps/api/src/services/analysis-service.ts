@@ -9,10 +9,14 @@ import {
 import { getCachedReport, setCachedReport } from "./analysis-cache.js";
 import { createCompletedAnalysis, createQueuedAnalysis, updateAnalysis } from "./analysis-store.js";
 import { GitHubServiceError } from "./github/github-errors.js";
+import { createEmptyCIMetrics } from "./metrics/ci-metrics.js";
 import { calculateCommitActivity } from "./metrics/commit-metrics.js";
 import { calculateContributorMetrics } from "./metrics/contributor-metrics.js";
+import { calculateEngineeringPracticeMetrics } from "./metrics/engineering-practice-metrics.js";
 import { calculateFileHotspotMetrics } from "./metrics/file-hotspot-metrics.js";
+import { calculateHealthScore } from "./metrics/health-score.js";
 import { calculateReleaseMetrics } from "./metrics/release-metrics.js";
+import type { RepositoryTreeEntry } from "./metrics/repository-file-rules.js";
 
 interface RepositoryAnalysisProvider {
   getRepositoryOverview(owner: string, repo: string): Promise<AnalysisReport["repository"]>;
@@ -58,12 +62,49 @@ interface ReleaseAnalysisProvider {
   }>;
 }
 
+interface WorkflowAnalysisProvider {
+  getCIMetrics(
+    repository: RepositoryIdentifier,
+    defaultBranch: string,
+    now: Date
+  ): Promise<{
+    metrics: AnalysisReport["ci"];
+    warnings: string[];
+  }>;
+}
+
+interface RepositoryTreeProvider {
+  getRepositoryTree(
+    repository: RepositoryIdentifier,
+    defaultBranch: string
+  ): Promise<{
+    entries: RepositoryTreeEntry[];
+    truncated: boolean;
+    warnings: string[];
+  }>;
+}
+
+interface RepositoryFileProvider {
+  readPracticeFiles(
+    repository: RepositoryIdentifier,
+    defaultBranch: string,
+    entries: RepositoryTreeEntry[]
+  ): Promise<{
+    contents: Map<string, string>;
+    workflowFileReadLimitReached: boolean;
+    warnings: string[];
+  }>;
+}
+
 export interface AnalysisServiceDependencies {
   repositoryService: RepositoryAnalysisProvider;
   pullRequestService: PullRequestAnalysisProvider;
   issueService: IssueAnalysisProvider;
   commitService?: CommitAnalysisProvider;
   releaseService?: ReleaseAnalysisProvider;
+  workflowService?: WorkflowAnalysisProvider;
+  repositoryTreeService?: RepositoryTreeProvider;
+  repositoryFileService?: RepositoryFileProvider;
   usedAuthenticatedGitHubClient?: boolean;
   getRateLimitRemaining?: () => number | null;
   nowProvider?: () => Date;
@@ -82,7 +123,15 @@ function createDataScope(): AnalysisDataScope {
     maxFileHotspots: ANALYSIS_CONFIG.maxFileHotspots,
     maxContributorRows: ANALYSIS_CONFIG.maxContributorRows,
     maxReleasesAnalyzed: ANALYSIS_CONFIG.maxReleasesAnalyzed,
-    releaseTrendMonths: ANALYSIS_CONFIG.releaseTrendMonths
+    releaseTrendMonths: ANALYSIS_CONFIG.releaseTrendMonths,
+    ciWindowDays: ANALYSIS_CONFIG.ciWindowDays,
+    maxWorkflowRunsAnalyzed: ANALYSIS_CONFIG.maxWorkflowRunsAnalyzed,
+    maxWorkflowsAnalyzed: ANALYSIS_CONFIG.maxWorkflowsAnalyzed,
+    maxWorkflowFilesRead: ANALYSIS_CONFIG.maxWorkflowFilesRead,
+    maxRepositoryTreeEntriesUsed: ANALYSIS_CONFIG.maxRepositoryTreeEntriesUsed,
+    maxEvidencePathsPerSignal: ANALYSIS_CONFIG.maxEvidencePathsPerSignal,
+    minimumCompletedRunsForReliableCiRate: ANALYSIS_CONFIG.minimumCompletedRunsForReliableCiRate,
+    healthScoreVersion: ANALYSIS_CONFIG.healthScoreVersion
   };
 }
 
@@ -147,7 +196,7 @@ export class AnalysisService {
 
       updateAnalysis(analysisId, {
         status: "fetching",
-        progress: 50,
+        progress: 39,
         currentStep: "Fetching commit history"
       });
       const commitAnalysis = await this.getCommitAnalysis(
@@ -160,15 +209,39 @@ export class AnalysisService {
 
       updateAnalysis(analysisId, {
         status: "fetching",
-        progress: 78,
+        progress: 68,
         currentStep: "Fetching releases"
       });
       const releases = await this.getReleaseMetrics(repository, now, warnings);
 
       updateAnalysis(analysisId, {
+        status: "fetching",
+        progress: 77,
+        currentStep: "Fetching GitHub Actions"
+      });
+      const ci = await this.getCIMetrics(
+        repository,
+        repositoryOverview.defaultBranch,
+        now,
+        warnings
+      );
+
+      updateAnalysis(analysisId, {
         status: "calculating",
-        progress: 88,
-        currentStep: "Calculating engineering metrics"
+        progress: 85,
+        currentStep: "Detecting engineering practices"
+      });
+      const engineeringPractices = await this.getEngineeringPractices(
+        repository,
+        repositoryOverview.defaultBranch,
+        ci,
+        warnings
+      );
+
+      updateAnalysis(analysisId, {
+        status: "calculating",
+        progress: 93,
+        currentStep: "Calculating health score"
       });
 
       const commits = {
@@ -189,7 +262,7 @@ export class AnalysisService {
         );
       }
 
-      const report: AnalysisReport = {
+      const reportWithoutHealthScore = {
         repository: repositoryOverview,
         pullRequests,
         issues,
@@ -200,6 +273,8 @@ export class AnalysisService {
         ),
         contributors: calculateContributorMetrics(commitAnalysis.commits, commitAnalysis.isSampled),
         releases,
+        ci,
+        engineeringPractices,
         generatedAt: this.nowProvider().toISOString(),
         dataScope: createDataScope(),
         dataQuality: {
@@ -209,8 +284,26 @@ export class AnalysisService {
             commitAnalysis.rateLimitRemaining ??
             this.dependencies.getRateLimitRemaining?.() ??
             null,
-          commitDetailsLimitedByRateLimit: commitAnalysis.commitDetailsLimitedByRateLimit
+          commitDetailsLimitedByRateLimit: commitAnalysis.commitDetailsLimitedByRateLimit,
+          workflowFileReadLimitReached:
+            engineeringPractices.workflowFilesAnalyzed >= ANALYSIS_CONFIG.maxWorkflowFilesRead &&
+            warnings.some((warning) => warning.includes("Workflow file inspection was capped")),
+          repositoryTreeTruncated: engineeringPractices.repositoryTreeTruncated,
+          ciSampleTooSmall: ci.successRate !== null && !ci.hasReliableSuccessRate
         }
+      };
+      const report: AnalysisReport = {
+        ...reportWithoutHealthScore,
+        healthScore: calculateHealthScore({
+          repository: reportWithoutHealthScore.repository,
+          pullRequests: reportWithoutHealthScore.pullRequests,
+          issues: reportWithoutHealthScore.issues,
+          commits: reportWithoutHealthScore.commits,
+          releases: reportWithoutHealthScore.releases,
+          ci: reportWithoutHealthScore.ci,
+          engineeringPractices: reportWithoutHealthScore.engineeringPractices,
+          now
+        })
       };
 
       setCachedReport(repository, report, this.nowProvider());
@@ -269,7 +362,7 @@ export class AnalysisService {
           const ratio = total > 0 ? processed / total : 1;
           updateAnalysis(analysisId, {
             status: "fetching",
-            progress: Math.min(77, Math.max(62, Math.round(62 + ratio * 15))),
+            progress: Math.min(67, Math.max(56, Math.round(56 + ratio * 11))),
             currentStep: "Inspecting commit file changes"
           });
         }
@@ -310,6 +403,75 @@ export class AnalysisService {
     } catch {
       warnings.push("Release analytics could not be completed. Other metrics are still available.");
       return calculateReleaseMetrics([], now, false);
+    }
+  }
+
+  private async getCIMetrics(
+    repository: RepositoryIdentifier,
+    defaultBranch: string,
+    now: Date,
+    warnings: string[]
+  ): Promise<AnalysisReport["ci"]> {
+    if (!this.dependencies.workflowService) {
+      return createEmptyCIMetrics(now);
+    }
+
+    try {
+      const result = await this.dependencies.workflowService.getCIMetrics(
+        repository,
+        defaultBranch,
+        now
+      );
+      warnings.push(...result.warnings);
+
+      if (result.metrics.successRate !== null && !result.metrics.hasReliableSuccessRate) {
+        warnings.push("CI success rate is based on a small number of completed workflow runs.");
+      }
+
+      return result.metrics;
+    } catch {
+      warnings.push(
+        "GitHub Actions analytics could not be completed. Other metrics are still available."
+      );
+      return createEmptyCIMetrics(now);
+    }
+  }
+
+  private async getEngineeringPractices(
+    repository: RepositoryIdentifier,
+    defaultBranch: string,
+    ci: AnalysisReport["ci"],
+    warnings: string[]
+  ): Promise<AnalysisReport["engineeringPractices"]> {
+    if (!this.dependencies.repositoryTreeService || !this.dependencies.repositoryFileService) {
+      return calculateEngineeringPracticeMetrics([], new Map(), ci, false);
+    }
+
+    try {
+      const tree = await this.dependencies.repositoryTreeService.getRepositoryTree(
+        repository,
+        defaultBranch
+      );
+      warnings.push(...tree.warnings);
+      const files = await this.dependencies.repositoryFileService.readPracticeFiles(
+        repository,
+        defaultBranch,
+        tree.entries
+      );
+      warnings.push(...files.warnings);
+      const metrics = calculateEngineeringPracticeMetrics(
+        tree.entries,
+        files.contents,
+        ci,
+        tree.truncated
+      );
+      warnings.push(...metrics.warnings);
+      return metrics;
+    } catch {
+      warnings.push(
+        "Static engineering practice detection could not be completed. Other metrics are still available."
+      );
+      return calculateEngineeringPracticeMetrics([], new Map(), ci, false);
     }
   }
 }

@@ -139,6 +139,105 @@ export interface ReleaseMetrics {
   isSampled: boolean;
 }
 
+export interface WorkflowSummary {
+  id: number;
+  name: string;
+  path: string;
+  state: string;
+  htmlUrl: string;
+}
+
+export interface WorkflowRunTrendPoint {
+  weekStart: string;
+  totalRuns: number;
+  successfulRuns: number;
+  failedRuns: number;
+}
+
+export interface LatestWorkflowRun {
+  workflowName: string;
+  status: string;
+  conclusion: string | null;
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string | null;
+  durationSeconds: number | null;
+}
+
+export interface CIMetrics {
+  workflowsConfigured: number;
+  activeWorkflows: number;
+  analyzedRuns: number;
+  completedRuns: number;
+  successfulRuns: number;
+  failedRuns: number;
+  ignoredRuns: number;
+  successRate: number | null;
+  hasReliableSuccessRate: boolean;
+  medianDurationSeconds: number | null;
+  latestRun: LatestWorkflowRun | null;
+  weeklyTrend: WorkflowRunTrendPoint[];
+  workflows: WorkflowSummary[];
+  isSampled: boolean;
+}
+
+export type EngineeringSignalStatus = "present" | "partial" | "missing" | "unknown";
+
+export interface EngineeringEvidence {
+  path: string;
+  detail: string;
+}
+
+export interface EngineeringSignal {
+  id: string;
+  category: "testing" | "quality" | "automation" | "documentation" | "governance" | "security";
+  label: string;
+  status: EngineeringSignalStatus;
+  summary: string;
+  evidence: EngineeringEvidence[];
+}
+
+export interface EngineeringPracticeMetrics {
+  signals: EngineeringSignal[];
+  testFileCount: number;
+  testFrameworks: string[];
+  hasCiWorkflow: boolean;
+  ciRunsTests: EngineeringSignalStatus;
+  packageScriptsDetected: {
+    test: boolean;
+    lint: boolean;
+    format: boolean;
+    typecheck: boolean;
+    build: boolean;
+    coverage: boolean;
+  };
+  workflowFilesAnalyzed: number;
+  repositoryFilesAnalyzed: number;
+  repositoryTreeTruncated: boolean;
+  warnings: string[];
+}
+
+export interface HealthScoreCategory {
+  id: "collaboration" | "activity" | "automation" | "project_hygiene";
+  label: string;
+  score: number | null;
+  effectiveWeight: number;
+  confidence: "high" | "medium" | "low";
+  summary: string;
+  signals: string[];
+  excludedMetrics: string[];
+}
+
+export interface HealthScoreResult {
+  version: string;
+  overallScore: number | null;
+  grade: "A" | "B" | "C" | "D" | "E" | null;
+  confidence: "high" | "medium" | "low";
+  categories: HealthScoreCategory[];
+  recommendations: string[];
+  excludedMetrics: string[];
+}
+
 export interface AnalysisDataScope {
   pullRequestWindowDays: number;
   staleIssueThresholdDays: number;
@@ -152,6 +251,14 @@ export interface AnalysisDataScope {
   maxContributorRows: number;
   maxReleasesAnalyzed: number;
   releaseTrendMonths: number;
+  ciWindowDays: number;
+  maxWorkflowRunsAnalyzed: number;
+  maxWorkflowsAnalyzed: number;
+  maxWorkflowFilesRead: number;
+  maxRepositoryTreeEntriesUsed: number;
+  maxEvidencePathsPerSignal: number;
+  minimumCompletedRunsForReliableCiRate: number;
+  healthScoreVersion: string;
 }
 
 export interface AnalysisDataQuality {
@@ -159,6 +266,9 @@ export interface AnalysisDataQuality {
   usedAuthenticatedGitHubClient: boolean;
   rateLimitRemaining: number | null;
   commitDetailsLimitedByRateLimit: boolean;
+  workflowFileReadLimitReached: boolean;
+  repositoryTreeTruncated: boolean;
+  ciSampleTooSmall: boolean;
 }
 
 export interface AnalysisReport {
@@ -169,6 +279,9 @@ export interface AnalysisReport {
   fileHotspots: FileHotspotMetrics;
   contributors: ContributorMetrics;
   releases: ReleaseMetrics;
+  ci: CIMetrics;
+  engineeringPractices: EngineeringPracticeMetrics;
+  healthScore: HealthScoreResult;
   generatedAt: string;
   dataScope: AnalysisDataScope;
   dataQuality: AnalysisDataQuality;
