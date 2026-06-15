@@ -1,7 +1,13 @@
 import type { AnalysisRunStatus } from "@prisma/client";
-import type { AnalysisReport, RepositoryIdentifier } from "@repopulse/shared";
+import type {
+  AnalysisMode,
+  AnalysisReport,
+  AnalysisSection,
+  AnalysisTriggerSource,
+  RepositoryIdentifier
+} from "@repopulse/shared";
 
-export const REPORT_SCHEMA_VERSION = "5";
+export const REPORT_SCHEMA_VERSION = "6";
 
 export interface RepositoryInput extends RepositoryIdentifier {
   githubId?: bigint | number | null;
@@ -18,6 +24,14 @@ export interface CreateAnalysisRunInput {
   forceRefresh: boolean;
   priority?: number;
   maxAttempts?: number;
+  triggerSource?: AnalysisTriggerSource;
+  triggerEvent?: string | null;
+  requestedSections?: AnalysisSection[];
+  baseAnalysisRunId?: string | null;
+  webhookDeliveryId?: string | null;
+  deduplicationKey?: string | null;
+  analysisMode?: AnalysisMode;
+  availableAt?: Date;
 }
 
 export interface AnalysisRunWithReport {
@@ -38,6 +52,10 @@ export interface AnalysisRunWithReport {
 export interface RepositoryHistoryItemRecord {
   analysisId: string;
   generatedAt: string;
+  analysisMode: AnalysisMode;
+  triggerSource: AnalysisTriggerSource;
+  triggerEvent: string | null;
+  refreshedSections: AnalysisSection[];
   healthScore: number | null;
   healthGrade: string | null;
   confidence: string | null;

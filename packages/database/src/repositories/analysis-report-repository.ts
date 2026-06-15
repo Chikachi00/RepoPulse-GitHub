@@ -20,6 +20,10 @@ function historyItem(
   row: {
     analysisRunId: string;
     generatedAt: Date;
+    analysisMode: string | null;
+    triggerSource: string | null;
+    triggerEvent: string | null;
+    requestedSections: unknown;
     healthScore: number | null;
     healthGrade: string | null;
     confidence: string | null;
@@ -34,6 +38,18 @@ function historyItem(
   return {
     analysisId: row.analysisRunId,
     generatedAt: row.generatedAt.toISOString(),
+    analysisMode: row.analysisMode === "PARTIAL" ? "PARTIAL" : "FULL",
+    triggerSource:
+      row.triggerSource === "CACHE" ||
+      row.triggerSource === "WEBHOOK" ||
+      row.triggerSource === "SCHEDULED" ||
+      row.triggerSource === "INSTALLATION"
+        ? row.triggerSource
+        : "MANUAL",
+    triggerEvent: row.triggerEvent,
+    refreshedSections: Array.isArray(row.requestedSections)
+      ? row.requestedSections.filter((section): section is never => typeof section === "string")
+      : [],
     healthScore: row.healthScore,
     healthGrade: row.healthGrade,
     confidence: row.confidence,
@@ -93,6 +109,17 @@ export class AnalysisReportRepository {
     const generatedAt = new Date(parsedReport.generatedAt);
 
     await this.prisma.$transaction(async (tx) => {
+      const run = await tx.analysisRun.findUniqueOrThrow({
+        where: { id: analysisRunId },
+        select: {
+          analysisMode: true,
+          triggerSource: true,
+          triggerEvent: true,
+          requestedSections: true,
+          baseAnalysisRunId: true,
+          webhookDeliveryId: true
+        }
+      });
       await tx.repository.update({
         where: { id: repositoryId },
         data: {
@@ -120,6 +147,12 @@ export class AnalysisReportRepository {
           activityScore: categoryScore(parsedReport, "activity"),
           automationScore: categoryScore(parsedReport, "automation"),
           projectHygieneScore: categoryScore(parsedReport, "project_hygiene"),
+          analysisMode: run.analysisMode,
+          triggerSource: run.triggerSource,
+          triggerEvent: run.triggerEvent,
+          requestedSections: run.requestedSections as Prisma.InputJsonValue,
+          baseAnalysisRunId: run.baseAnalysisRunId,
+          webhookDeliveryId: run.webhookDeliveryId,
           reportJson: parsedReport as unknown as Prisma.InputJsonValue
         }
       });
@@ -153,7 +186,6 @@ export class AnalysisReportRepository {
     const take = Math.min(Math.max(limit, 1), 100) + 1;
     const rows = await this.prisma.analysisReportRecord.findMany({
       where: {
-        schemaVersion: REPORT_SCHEMA_VERSION,
         analysisRun: {
           repositoryId,
           status: "COMPLETED"
@@ -179,7 +211,6 @@ export class AnalysisReportRepository {
     const row = await this.prisma.analysisReportRecord.findFirst({
       where: {
         analysisRunId: analysisId,
-        schemaVersion: REPORT_SCHEMA_VERSION,
         analysisRun: {
           status: "COMPLETED",
           repository: {

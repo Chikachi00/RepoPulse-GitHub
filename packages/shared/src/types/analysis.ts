@@ -3,6 +3,22 @@ export interface RepositoryIdentifier {
   repo: string;
 }
 
+export type AnalysisSection =
+  | "repository"
+  | "pullRequests"
+  | "issues"
+  | "commits"
+  | "fileHotspots"
+  | "contributors"
+  | "releases"
+  | "ci"
+  | "engineeringPractices"
+  | "healthScore";
+
+export type AnalysisMode = "FULL" | "PARTIAL";
+
+export type AnalysisTriggerSource = "MANUAL" | "CACHE" | "WEBHOOK" | "SCHEDULED" | "INSTALLATION";
+
 export type AnalysisStatus = "pending" | "fetching" | "calculating" | "completed" | "failed";
 
 export interface CreateAnalysisRequest {
@@ -264,11 +280,25 @@ export interface AnalysisDataScope {
 export interface AnalysisDataQuality {
   warnings: string[];
   usedAuthenticatedGitHubClient: boolean;
+  githubAuthentication: "installation" | "personal_token" | "anonymous";
   rateLimitRemaining: number | null;
   commitDetailsLimitedByRateLimit: boolean;
   workflowFileReadLimitReached: boolean;
   repositoryTreeTruncated: boolean;
   ciSampleTooSmall: boolean;
+}
+
+export interface AnalysisSectionFreshness {
+  repository: string;
+  pullRequests: string;
+  issues: string;
+  commits: string;
+  fileHotspots: string;
+  contributors: string;
+  releases: string;
+  ci: string;
+  engineeringPractices: string;
+  healthScore: string;
 }
 
 export interface AnalysisReport {
@@ -283,6 +313,7 @@ export interface AnalysisReport {
   engineeringPractices: EngineeringPracticeMetrics;
   healthScore: HealthScoreResult;
   generatedAt: string;
+  sectionFreshness: AnalysisSectionFreshness;
   dataScope: AnalysisDataScope;
   dataQuality: AnalysisDataQuality;
 }
@@ -314,6 +345,10 @@ export interface ApiErrorResponse {
 export interface RepositoryHistoryItem {
   analysisId: string;
   generatedAt: string;
+  analysisMode: AnalysisMode;
+  triggerSource: AnalysisTriggerSource;
+  triggerEvent: string | null;
+  refreshedSections: AnalysisSection[];
   healthScore: number | null;
   healthGrade: string | null;
   confidence: string | null;
@@ -344,4 +379,20 @@ export interface MetricChange {
   current: number | null;
   previous: number | null;
   delta: number | null;
+}
+
+export interface RepositoryIntegrationStatus {
+  installed: boolean;
+  installationStatus: "active" | "suspended" | "deleted" | "not_installed";
+  privateRepository: boolean | null;
+  automaticAnalysis: boolean;
+  lastWebhookAt: string | null;
+  lastFullSyncAt: string | null;
+  nextScheduledAt: string | null;
+  installUrl: string | null;
+}
+
+export interface GitHubAppStatus {
+  configured: boolean;
+  slug: string | null;
 }

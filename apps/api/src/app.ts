@@ -6,7 +6,9 @@ import {
 import fastify, { type FastifyError, type FastifyInstance } from "fastify";
 
 import { registerAnalysisRoutes } from "./routes/analyses.js";
+import { registerGitHubAppRoutes } from "./routes/github-app.js";
 import { registerHealthRoutes } from "./routes/health.js";
+import { registerWebhookRoutes, type WebhookPersistenceService } from "./routes/webhooks.js";
 import { getAnalysis as getMemoryAnalysis } from "./services/analysis-store.js";
 import { PersistentAnalysisService } from "./services/persistent-analysis-service.js";
 
@@ -17,12 +19,24 @@ export interface BuildAppOptions {
       "createAnalysis" | "getAnalysis" | "getEvents" | "listHistory" | "getHistoricalReport"
     >
   >;
+  webhookService?: WebhookPersistenceService;
+  webhookSecret?: string;
   isDatabaseConnected?: () => Promise<boolean>;
 }
 
+function parseJsonBody(body: Buffer): unknown {
+  if (body.length === 0) {
+    return {};
+  }
+
+  return JSON.parse(body.toString("utf8"));
+}
+
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
+  const webhookMaxBodyBytes = Number.parseInt(process.env.WEBHOOK_MAX_BODY_BYTES ?? "2097152", 10);
   const app = fastify({
-    logger: false
+    logger: false,
+    bodyLimit: Number.isFinite(webhookMaxBodyBytes) ? webhookMaxBodyBytes : 2_097_152
   });
   const isDatabaseConnected =
     options.isDatabaseConnected ??
@@ -58,7 +72,32 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         : async () => null
   };
 
+  app.removeContentTypeParser("application/json");
+  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
+    const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+
+    if (request.url.startsWith("/api/webhooks/github")) {
+      done(null, buffer);
+      return;
+    }
+
+    try {
+      done(null, parseJsonBody(buffer));
+    } catch (parseError) {
+      done(parseError as Error);
+    }
+  });
+
   app.setErrorHandler((error: FastifyError, _request, reply) => {
+    if (error.statusCode === 413) {
+      return reply.code(413).send({
+        error: {
+          code: "WEBHOOK_BODY_TOO_LARGE",
+          message: "Request body is too large."
+        }
+      });
+    }
+
     if (error instanceof DatabaseUnavailableError) {
       return reply.code(503).send({
         error: {
@@ -90,7 +129,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   await registerHealthRoutes(app, isDatabaseConnected);
+  await registerGitHubAppRoutes(app);
   await registerAnalysisRoutes(app, analysisService);
+  await registerWebhookRoutes(app, options.webhookService, options.webhookSecret);
 
   return app;
 }

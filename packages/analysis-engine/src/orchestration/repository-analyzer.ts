@@ -1,6 +1,7 @@
 import {
   ANALYSIS_CONFIG,
   type AnalysisDataScope,
+  type AnalysisSectionFreshness,
   type AnalysisReport,
   type RepositoryIdentifier
 } from "@repopulse/shared";
@@ -53,6 +54,21 @@ function createDataScope(): AnalysisDataScope {
     maxEvidencePathsPerSignal: ANALYSIS_CONFIG.maxEvidencePathsPerSignal,
     minimumCompletedRunsForReliableCiRate: ANALYSIS_CONFIG.minimumCompletedRunsForReliableCiRate,
     healthScoreVersion: ANALYSIS_CONFIG.healthScoreVersion
+  };
+}
+
+function createSectionFreshness(timestamp: string): AnalysisSectionFreshness {
+  return {
+    repository: timestamp,
+    pullRequests: timestamp,
+    issues: timestamp,
+    commits: timestamp,
+    fileHotspots: timestamp,
+    contributors: timestamp,
+    releases: timestamp,
+    ci: timestamp,
+    engineeringPractices: timestamp,
+    healthScore: timestamp
   };
 }
 
@@ -184,6 +200,7 @@ export class GitHubRepositoryAnalyzer implements RepositoryAnalyzer {
       ),
       mergeCommitsExcludedFromDetails: commitAnalysis.mergeCommitsExcludedFromDetails
     };
+    const generatedAt = now.toISOString();
     const reportWithoutHealth = {
       repository: repositoryOverview,
       pullRequests,
@@ -197,11 +214,15 @@ export class GitHubRepositoryAnalyzer implements RepositoryAnalyzer {
       releases,
       ci,
       engineeringPractices,
-      generatedAt: now.toISOString(),
+      generatedAt,
+      sectionFreshness: createSectionFreshness(generatedAt),
       dataScope: createDataScope(),
       dataQuality: {
         warnings,
         usedAuthenticatedGitHubClient: this.gitHubClient.authenticated,
+        githubAuthentication: this.gitHubClient.authenticated
+          ? ("personal_token" as const)
+          : ("anonymous" as const),
         rateLimitRemaining:
           commitAnalysis.rateLimitRemaining ?? this.gitHubClient.getRateLimitRemaining(),
         commitDetailsLimitedByRateLimit: commitAnalysis.commitDetailsLimitedByRateLimit,

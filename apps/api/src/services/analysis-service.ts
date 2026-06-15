@@ -1,6 +1,7 @@
 import {
   ANALYSIS_CONFIG,
   type AnalysisDataScope,
+  type AnalysisSectionFreshness,
   type AnalysisProgress,
   type AnalysisReport,
   type RepositoryIdentifier
@@ -135,6 +136,21 @@ function createDataScope(): AnalysisDataScope {
   };
 }
 
+function createSectionFreshness(timestamp: string): AnalysisSectionFreshness {
+  return {
+    repository: timestamp,
+    pullRequests: timestamp,
+    issues: timestamp,
+    commits: timestamp,
+    fileHotspots: timestamp,
+    contributors: timestamp,
+    releases: timestamp,
+    ci: timestamp,
+    engineeringPractices: timestamp,
+    healthScore: timestamp
+  };
+}
+
 function hasInvalidCommitDate(
   commit: Parameters<typeof calculateCommitActivity>[0][number]
 ): boolean {
@@ -262,6 +278,7 @@ export class AnalysisService {
         );
       }
 
+      const generatedAt = this.nowProvider().toISOString();
       const reportWithoutHealthScore = {
         repository: repositoryOverview,
         pullRequests,
@@ -275,11 +292,15 @@ export class AnalysisService {
         releases,
         ci,
         engineeringPractices,
-        generatedAt: this.nowProvider().toISOString(),
+        generatedAt,
+        sectionFreshness: createSectionFreshness(generatedAt),
         dataScope: createDataScope(),
         dataQuality: {
           warnings,
           usedAuthenticatedGitHubClient: this.dependencies.usedAuthenticatedGitHubClient ?? false,
+          githubAuthentication: this.dependencies.usedAuthenticatedGitHubClient
+            ? ("personal_token" as const)
+            : ("anonymous" as const),
           rateLimitRemaining:
             commitAnalysis.rateLimitRemaining ??
             this.dependencies.getRateLimitRemaining?.() ??

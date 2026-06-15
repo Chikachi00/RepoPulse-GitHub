@@ -35,6 +35,19 @@ const healthScoreCategorySchema = z.object({
   excludedMetrics: z.array(z.string())
 });
 
+const sectionFreshnessSchema = z.object({
+  repository: z.string(),
+  pullRequests: z.string(),
+  issues: z.string(),
+  commits: z.string(),
+  fileHotspots: z.string(),
+  contributors: z.string(),
+  releases: z.string(),
+  ci: z.string(),
+  engineeringPractices: z.string(),
+  healthScore: z.string()
+});
+
 export const analysisReportSchema = z
   .object({
     repository: repositoryOverviewSchema,
@@ -161,8 +174,13 @@ export const analysisReportSchema = z
       excludedMetrics: z.array(z.string())
     }),
     generatedAt: z.string(),
+    sectionFreshness: sectionFreshnessSchema.optional(),
     dataScope: z.record(z.string(), z.unknown()),
-    dataQuality: z.record(z.string(), z.unknown())
+    dataQuality: z.record(z.string(), z.unknown()).and(
+      z.object({
+        githubAuthentication: z.enum(["installation", "personal_token", "anonymous"]).optional()
+      })
+    )
   })
   .passthrough();
 

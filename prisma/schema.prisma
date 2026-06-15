@@ -15,6 +15,29 @@ enum AnalysisRunStatus {
   CANCELLED
 }
 
+enum AnalysisTriggerSource {
+  MANUAL
+  CACHE
+  WEBHOOK
+  SCHEDULED
+  INSTALLATION
+}
+
+enum GitHubInstallationStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum WebhookDeliveryStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  IGNORED
+  RETRY_WAIT
+  FAILED
+}
+
 model Repository {
   id              String   @id @default(cuid())
   githubId        BigInt?  @unique
@@ -33,6 +56,7 @@ model Repository {
   lastAnalyzedAt DateTime?
 
   analysisRuns AnalysisRun[]
+  githubInstallations GitHubInstallationRepository[]
 
   @@index([owner, name])
   @@index([lastAnalyzedAt])
@@ -64,6 +88,15 @@ model AnalysisRun {
   errorCode    String?
   errorMessage String?
 
+  triggerSource     AnalysisTriggerSource @default(MANUAL)
+  triggerEvent      String?
+  requestedSections Json?
+  baseAnalysisRunId String?
+  webhookDeliveryId String?
+  webhookDelivery   WebhookDelivery? @relation(fields: [webhookDeliveryId], references: [id], onDelete: SetNull)
+  deduplicationKey  String? @unique
+  analysisMode      String?
+
   report AnalysisReportRecord?
   events AnalysisEvent[]
 
@@ -73,6 +106,7 @@ model AnalysisRun {
   @@index([status, availableAt, priority, queuedAt])
   @@index([repositoryId, createdAt])
   @@index([heartbeatAt])
+  @@index([triggerSource, analysisMode, status])
 }
 
 model AnalysisReportRecord {
@@ -93,6 +127,13 @@ model AnalysisReportRecord {
   automationScore      Float?
   projectHygieneScore  Float?
 
+  analysisMode      String?
+  triggerSource     AnalysisTriggerSource?
+  triggerEvent      String?
+  requestedSections Json?
+  baseAnalysisRunId String?
+  webhookDeliveryId String?
+
   reportJson Json
 
   createdAt DateTime @default(now())
@@ -112,4 +153,104 @@ model AnalysisEvent {
   createdAt     DateTime    @default(now())
 
   @@index([analysisRunId, createdAt])
+}
+
+model GitHubInstallation {
+  id                  String   @id @default(cuid())
+  installationId      BigInt   @unique
+
+  accountId           BigInt?
+  accountLogin        String
+  accountType         String?
+  targetType          String?
+
+  repositorySelection String?
+  permissionsJson     Json?
+  subscribedEvents    Json?
+
+  status              GitHubInstallationStatus @default(ACTIVE)
+  suspendedAt         DateTime?
+  installedAt         DateTime?
+  deletedAt           DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  repositories        GitHubInstallationRepository[]
+  webhookDeliveries   WebhookDelivery[]
+
+  @@index([accountLogin])
+  @@index([status])
+}
+
+model GitHubInstallationRepository {
+  id                    String   @id @default(cuid())
+
+  installationDbId      String
+  installation          GitHubInstallation @relation(fields: [installationDbId], references: [id], onDelete: Cascade)
+
+  repositoryId          String
+  repository            Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  githubRepositoryId    BigInt
+  private               Boolean  @default(false)
+  active                Boolean  @default(true)
+
+  addedAt               DateTime @default(now())
+  removedAt             DateTime?
+  lastWebhookAt         DateTime?
+  lastFullSyncAt        DateTime?
+
+  automaticAnalysis     Boolean  @default(false)
+  nextScheduledAt       DateTime?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([installationDbId, githubRepositoryId])
+  @@index([repositoryId, active])
+  @@index([automaticAnalysis, nextScheduledAt])
+}
+
+model WebhookDelivery {
+  id                    String   @id @default(cuid())
+  deliveryId            String   @unique
+
+  eventName             String
+  action                String?
+
+  installationDbId      String?
+  installation          GitHubInstallation? @relation(fields: [installationDbId], references: [id], onDelete: SetNull)
+
+  githubInstallationId  BigInt?
+  githubRepositoryId    BigInt?
+  repositoryFullName    String?
+
+  status                WebhookDeliveryStatus @default(RECEIVED)
+
+  payloadHash           String
+  normalizedPayload     Json?
+
+  receivedAt            DateTime @default(now())
+  claimedAt             DateTime?
+  heartbeatAt           DateTime?
+  processedAt           DateTime?
+  failedAt              DateTime?
+
+  workerId              String?
+  attemptCount          Int      @default(0)
+  maxAttempts           Int      @default(3)
+  availableAt           DateTime @default(now())
+
+  errorCode             String?
+  errorMessage          String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  analysisRuns          AnalysisRun[]
+
+  @@index([status, availableAt, receivedAt])
+  @@index([githubRepositoryId, receivedAt])
+  @@index([githubInstallationId])
 }

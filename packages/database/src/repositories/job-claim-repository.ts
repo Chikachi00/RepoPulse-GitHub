@@ -38,7 +38,8 @@ export class JobClaimRepository {
           heartbeatAt: now,
           startedAt: run.startedAt ?? now,
           attemptCount: { increment: 1 },
-          currentStep: "Worker claimed task"
+          currentStep: "Worker claimed task",
+          deduplicationKey: null
         }
       });
 

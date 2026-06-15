@@ -18,3 +18,10 @@ export class InvalidAnalysisTransitionError extends Error {
     this.name = "InvalidAnalysisTransitionError";
   }
 }
+
+export class WebhookDeliveryConflictError extends Error {
+  constructor() {
+    super("Webhook delivery ID was reused with a different payload.");
+    this.name = "WebhookDeliveryConflictError";
+  }
+}

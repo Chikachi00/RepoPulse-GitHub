@@ -5,10 +5,10 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "npm run build -w @repopulse/shared && tsx watch src/server.ts",
-    "build": "npm run build -w @repopulse/shared && tsc -p tsconfig.json",
+    "dev": "npm run build -w @repopulse/shared && npm run build -w @repopulse/database && tsx watch src/server.ts",
+    "build": "npm run build -w @repopulse/shared && npm run build -w @repopulse/database && tsc -p tsconfig.json",
     "test": "vitest run",
-    "typecheck": "npm run build -w @repopulse/shared && tsc -p tsconfig.json --noEmit",
+    "typecheck": "npm run build -w @repopulse/shared && npm run build -w @repopulse/database && tsc -p tsconfig.json --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {

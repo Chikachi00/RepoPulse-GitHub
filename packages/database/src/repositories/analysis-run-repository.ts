@@ -34,7 +34,15 @@ export class AnalysisRunRepository {
           progress: 0,
           forceRefresh: input.forceRefresh,
           priority: input.priority ?? 0,
-          maxAttempts: input.maxAttempts ?? 3
+          maxAttempts: input.maxAttempts ?? 3,
+          triggerSource: input.triggerSource ?? "MANUAL",
+          triggerEvent: input.triggerEvent ?? null,
+          requestedSections: input.requestedSections ?? undefined,
+          baseAnalysisRunId: input.baseAnalysisRunId ?? null,
+          webhookDeliveryId: input.webhookDeliveryId ?? null,
+          deduplicationKey: input.deduplicationKey ?? null,
+          analysisMode: input.analysisMode ?? "FULL",
+          availableAt: input.availableAt
         }
       });
 
@@ -62,6 +70,11 @@ export class AnalysisRunRepository {
           status: "COMPLETED",
           progress: 100,
           currentStep: "Analysis completed from cache",
+          triggerSource: "CACHE",
+          analysisMode: sourceReport.analysisMode ?? "FULL",
+          triggerEvent: sourceReport.triggerEvent,
+          requestedSections: sourceReport.requestedSections as Prisma.InputJsonValue,
+          baseAnalysisRunId: sourceReport.analysisRunId,
           completedAt: new Date()
         }
       });
@@ -79,6 +92,12 @@ export class AnalysisRunRepository {
           activityScore: sourceReport.activityScore,
           automationScore: sourceReport.automationScore,
           projectHygieneScore: sourceReport.projectHygieneScore,
+          analysisMode: sourceReport.analysisMode ?? "FULL",
+          triggerSource: "CACHE",
+          triggerEvent: sourceReport.triggerEvent,
+          requestedSections: sourceReport.requestedSections as Prisma.InputJsonValue,
+          baseAnalysisRunId: sourceReport.analysisRunId,
+          webhookDeliveryId: null,
           reportJson: sourceReport.reportJson as Prisma.InputJsonValue
         }
       });
