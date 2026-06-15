@@ -1,6 +1,8 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
+import { getPostgresSchema } from "./postgres-schema.js";
+
 type GlobalWithPrisma = typeof globalThis & {
   __repopulsePrisma?: PrismaClient;
 };
@@ -15,8 +17,10 @@ export function getPrismaClient(): PrismaClient {
       throw new Error("DATABASE_URL is required to initialize Prisma Client.");
     }
 
+    const schema = getPostgresSchema(databaseUrl);
+
     globalWithPrisma.__repopulsePrisma = new PrismaClient({
-      adapter: new PrismaPg(databaseUrl)
+      adapter: new PrismaPg(databaseUrl, { schema })
     });
   }
 

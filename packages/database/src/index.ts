@@ -5,6 +5,7 @@ export {
   ReportSchemaInvalidError,
   WebhookDeliveryConflictError
 } from "./errors.js";
+export { getConfiguredPostgresSchema, getPostgresSchema } from "./postgres-schema.js";
 export { AnalysisReportRepository } from "./repositories/analysis-report-repository.js";
 export { AnalysisRunRepository } from "./repositories/analysis-run-repository.js";
 export { CleanupRepository } from "./repositories/cleanup-repository.js";

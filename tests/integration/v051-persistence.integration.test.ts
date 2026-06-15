@@ -18,7 +18,7 @@ import {
   RecoveryRepository,
   RepositoryRepository,
   REPORT_SCHEMA_VERSION
-} from "../../packages/database/src/index.js";
+} from "@repopulse/database";
 import { cleanDatabase } from "./setup/database-cleaner.js";
 import { createTestReport } from "./setup/report-factory.js";
 import {
@@ -172,6 +172,7 @@ beforeEach(async () => {
 
 describe("V0.5.1 PostgreSQL integration", () => {
   test("applies committed migrations and enforces key constraints", async () => {
+    const schemaName = getIntegrationSchemaName();
     const repository = await createRepository("Owner", "Repo");
     await expect(createRepository("owner", "repo")).resolves.toMatchObject({
       id: repository.id,
@@ -181,14 +182,16 @@ describe("V0.5.1 PostgreSQL integration", () => {
     const tables = await prisma.$queryRaw<{ table_name: string }[]>`
       SELECT table_name
       FROM information_schema.tables
-      WHERE table_schema = current_schema()
+      WHERE table_schema = ${schemaName}
         AND table_name IN ('Repository', 'AnalysisRun', 'AnalysisReportRecord', 'AnalysisEvent')
       ORDER BY table_name
     `;
     const enumTypes = await prisma.$queryRaw<{ typname: string }[]>`
-      SELECT typname
-      FROM pg_type
-      WHERE typname = 'AnalysisRunStatus'
+      SELECT t.typname
+      FROM pg_type t
+      JOIN pg_namespace n ON n.oid = t.typnamespace
+      WHERE t.typname = 'AnalysisRunStatus'
+        AND n.nspname = ${schemaName}
     `;
 
     expect(tables.map((table) => table.table_name)).toEqual([

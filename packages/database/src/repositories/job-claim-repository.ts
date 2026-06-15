@@ -1,6 +1,7 @@
 import type { AnalysisRun, PrismaClient } from "@prisma/client";
 
 import { getPrismaClient } from "../client.js";
+import { getConfiguredPostgresSchema } from "../postgres-schema.js";
 import { assertAnalysisRunTransition } from "./status-transitions.js";
 
 interface ClaimRow {
@@ -11,7 +12,12 @@ export class JobClaimRepository {
   constructor(private readonly prisma: PrismaClient = getPrismaClient()) {}
 
   async claimNext(workerId: string, now = new Date()): Promise<AnalysisRun | null> {
+    const schema = getConfiguredPostgresSchema();
+
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT set_config('search_path', ${schema}, true)
+      `;
       const rows = await tx.$queryRaw<ClaimRow[]>`
         SELECT id
         FROM "AnalysisRun"

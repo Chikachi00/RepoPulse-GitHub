@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 
 import { Client } from "pg";
 
-import { disconnectPrisma } from "../../../packages/database/src/client.js";
+import { disconnectPrisma } from "@repopulse/database";
 
 const execFileAsync = promisify(execFile);
 
