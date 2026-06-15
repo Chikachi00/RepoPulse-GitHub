@@ -1,6 +1,6 @@
 # Testing
 
-RepoPulse V0.5.1 separates fast unit tests from PostgreSQL-backed integration tests.
+RepoPulse V1.0 separates fast unit tests from PostgreSQL-backed integration tests.
 
 ## Unit Tests
 
@@ -43,17 +43,19 @@ The development `public` schema is not reset or cleaned by integration tests.
 
 ## Migration Setup
 
-Integration tests apply the committed migration:
+Integration tests apply committed migrations:
 
 ```text
 20260614143000_init_persistent_analysis
+20260615182000_add_github_app_installations_and_webhooks
+20260615193000_enforce_webhook_analysis_idempotency
 ```
 
 They intentionally do not use `prisma db push` or `prisma migrate reset`.
 
 ## Covered Database Scenarios
 
-The V0.5.1 suite covers:
+The integration suite covers:
 
 - migration table and enum presence;
 - repository unique constraints;

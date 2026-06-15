@@ -33,7 +33,7 @@ export function FeaturePreview() {
       <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
         <h2 className="text-base font-semibold text-slate-950">Analysis preview</h2>
         <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
-          V0.1
+          V1.0
         </span>
       </div>
       <div className="grid gap-3">

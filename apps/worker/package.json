@@ -1,6 +1,6 @@
 {
   "name": "@repopulse/worker",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -13,9 +13,9 @@
     "cleanup": "tsx src/cleanup.ts"
   },
   "dependencies": {
-    "@repopulse/analysis-engine": "0.1.0",
-    "@repopulse/database": "0.1.0",
-    "@repopulse/shared": "0.1.0",
+    "@repopulse/analysis-engine": "1.0.0",
+    "@repopulse/database": "1.0.0",
+    "@repopulse/shared": "1.0.0",
     "dotenv": "^17.4.2"
   },
   "devDependencies": {

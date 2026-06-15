@@ -1,6 +1,6 @@
 # Health Score Methodology
 
-RepoPulse V0.4 introduces an explainable health score. The score is not a judgment of whether a repository is good or bad; it is a compact summary of the signals RepoPulse can currently observe.
+RepoPulse V1.0 includes an explainable health score. The score is not a judgment of whether a repository is good or bad; it is a compact summary of the signals RepoPulse can currently observe.
 
 ## Version
 

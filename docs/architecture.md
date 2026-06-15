@@ -98,9 +98,9 @@ The health score is also calculated in the metrics layer. It uses already-comput
 
 ## Persistent Tasks and Cache
 
-V0.5 stores tasks and reports in PostgreSQL. Cache reuse is based on the latest successful report for the same repository within the 15-minute TTL and matching `REPORT_SCHEMA_VERSION`.
+RepoPulse stores tasks and reports in PostgreSQL. Cache reuse is based on the latest successful report for the same repository within the 15-minute TTL and matching `REPORT_SCHEMA_VERSION`.
 
-V0.5.1 validates this architecture with real PostgreSQL integration tests. The test harness creates an isolated temporary schema, applies committed migrations with `prisma migrate deploy`, runs database-backed API/worker/repository tests, and drops the schema afterward. This keeps the development `public` schema separate from automated verification.
+The integration test harness creates an isolated temporary schema, applies committed migrations with `prisma migrate deploy`, runs database-backed API, worker and repository tests, and drops the schema afterward. This keeps the development `public` schema separate from automated verification.
 
 ## CI Verification
 
@@ -126,4 +126,4 @@ Current limitations:
 - Reports are JSONB snapshots plus selected indexed fields.
 - Integration tests require a real PostgreSQL database and `TEST_DATABASE_URL`.
 
-Future versions can add GitHub App installation records, webhooks, incremental refresh and scheduled analyses.
+Future versions can add scheduled analyses, richer deployment packaging and multi-user authorization boundaries.

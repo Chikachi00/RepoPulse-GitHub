@@ -1,6 +1,6 @@
 # Database Schema
 
-RepoPulse V0.6 uses PostgreSQL through Prisma for persistent analysis jobs, historical reports and GitHub App webhook state.
+RepoPulse V1.0 uses PostgreSQL through Prisma for persistent analysis jobs, historical reports and GitHub App webhook state.
 
 ## Migration
 
@@ -17,7 +17,7 @@ GitHub App foundation and webhook automation migrations:
 20260615193000_enforce_webhook_analysis_idempotency
 ```
 
-V0.5.1 integration tests apply this committed migration to a unique temporary PostgreSQL schema using `prisma migrate deploy`. Tests do not use `prisma db push`, `migrate dev`, or `migrate reset`.
+Integration tests apply committed migrations to a unique temporary PostgreSQL schema using `prisma migrate deploy`. Tests do not use `prisma db push`, `migrate dev`, or `migrate reset`.
 
 ## Repository
 
@@ -33,7 +33,7 @@ Important fields:
 
 ## AnalysisRun
 
-Stores the persistent task state. This replaces the V0.4 in-memory analysis map.
+Stores the persistent task state. This replaces the early in-memory analysis map.
 
 Important fields:
 

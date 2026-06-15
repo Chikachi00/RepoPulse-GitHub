@@ -1,6 +1,6 @@
 # Worker Lifecycle
 
-RepoPulse V0.6 runs analysis execution and webhook delivery processing in `@repopulse/worker`.
+RepoPulse V1.0 runs analysis execution and webhook delivery processing in `@repopulse/worker`.
 
 ## States
 
@@ -66,7 +66,7 @@ If a `RUNNING` task has a stale heartbeat:
 
 Recovery uses conditional updates so repeated recovery attempts are idempotent.
 
-V0.5.1 adds PostgreSQL integration tests for fresh heartbeat preservation, stale task recovery, exhausted-attempt failure and concurrent recovery. The tests assert that the same stale task is recovered only once and that duplicate recovery events are not emitted.
+PostgreSQL integration tests cover fresh heartbeat preservation, stale task recovery, exhausted-attempt failure and concurrent recovery. The tests assert that the same stale task is recovered only once and that duplicate recovery events are not emitted.
 
 ## Retry Policy
 

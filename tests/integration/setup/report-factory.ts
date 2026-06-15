@@ -114,9 +114,9 @@ export function createTestReport(options: ReportFactoryOptions = {}): AnalysisRe
       stableReleaseCount: 1,
       prereleaseCount: 0,
       latestRelease: {
-        name: "v0.5.1",
-        tagName: "v0.5.1",
-        htmlUrl: `https://github.com/${owner}/${repo}/releases/tag/v0.5.1`,
+        name: "v1.0.0",
+        tagName: "v1.0.0",
+        htmlUrl: `https://github.com/${owner}/${repo}/releases/tag/v1.0.0`,
         publishedAt: generatedAt,
         prerelease: false
       },

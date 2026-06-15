@@ -277,7 +277,7 @@ beforeEach(async () => {
   await cleanDatabase(prisma);
 });
 
-describe("V0.5.1 PostgreSQL integration", () => {
+describe("PostgreSQL persistence integration", () => {
   test("applies committed migrations and enforces key constraints", async () => {
     const schemaName = getIntegrationSchemaName();
     const repository = await createRepository("Owner", "Repo");

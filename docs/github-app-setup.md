@@ -1,8 +1,8 @@
 # GitHub App Setup
 
-RepoPulse V0.6 uses a GitHub App for webhook-driven automatic refresh and installation-token API access.
+RepoPulse V1.0 uses a GitHub App for webhook-driven automatic refresh and installation-token API access.
 
-Private repository support in V0.6 is intended for single-owner or self-hosted deployments, not a public multi-tenant SaaS.
+Private repository support in V1.0 is intended for single-owner or self-hosted deployments, not a public multi-tenant SaaS.
 
 ## Create the App
 
@@ -61,7 +61,7 @@ Actions: Read-only
 
 ## Events
 
-Subscribe only to the V0.6 supported events:
+Subscribe only to the V1.0 supported events:
 
 ```text
 installation

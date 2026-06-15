@@ -16,7 +16,7 @@ export class OctokitInstallationClientFactory implements InstallationClientFacto
 
     return new Octokit({
       auth: token.token,
-      userAgent: "RepoPulse/0.6"
+      userAgent: "RepoPulse/1.0"
     });
   }
 

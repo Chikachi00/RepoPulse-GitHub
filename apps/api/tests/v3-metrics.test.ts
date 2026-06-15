@@ -45,7 +45,7 @@ function release(overrides: Partial<ReleaseSummary>): ReleaseSummary {
   };
 }
 
-describe("V0.3 commit activity metrics", () => {
+describe("commit activity metrics", () => {
   it("returns a zero-filled 12 week window including the current week", () => {
     const metrics = calculateCommitActivity([], now);
 
@@ -81,7 +81,7 @@ describe("V0.3 commit activity metrics", () => {
   });
 });
 
-describe("V0.3 file hotspots", () => {
+describe("file hotspot metrics", () => {
   it("matches ignore rules without broad substring checks", () => {
     expect(shouldIgnoreHotspotFile("node_modules/pkg/index.js")).toBe(true);
     expect(shouldIgnoreHotspotFile("src/prefix.ts")).toBe(false);
@@ -188,7 +188,7 @@ describe("V0.3 file hotspots", () => {
   });
 });
 
-describe("V0.3 contributor concentration", () => {
+describe("contributor concentration metrics", () => {
   it("merges logins and unlinked authors without exposing email", () => {
     const metrics = calculateContributorMetrics(
       [
@@ -228,7 +228,7 @@ describe("V0.3 contributor concentration", () => {
   });
 });
 
-describe("V0.3 release metrics", () => {
+describe("release metrics", () => {
   it("excludes drafts, separates prereleases, sorts latest and calculates intervals", () => {
     const metrics = calculateReleaseMetrics(
       [
