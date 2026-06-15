@@ -1,4 +1,8 @@
-import { checkDatabaseConnection, DatabaseUnavailableError } from "@repopulse/database";
+import {
+  checkDatabaseConnection,
+  DatabaseUnavailableError,
+  ReportSchemaInvalidError
+} from "@repopulse/database";
 import fastify, { type FastifyError, type FastifyInstance } from "fastify";
 
 import { registerAnalysisRoutes } from "./routes/analyses.js";
@@ -60,6 +64,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         error: {
           code: "DATABASE_UNAVAILABLE",
           message: "Database is unavailable."
+        }
+      });
+    }
+
+    if (error instanceof ReportSchemaInvalidError) {
+      return reply.code(500).send({
+        error: {
+          code: "REPORT_SCHEMA_INVALID",
+          message: "Stored analysis report schema is invalid."
         }
       });
     }

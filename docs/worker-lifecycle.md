@@ -66,6 +66,8 @@ If a `RUNNING` task has a stale heartbeat:
 
 Recovery uses conditional updates so repeated recovery attempts are idempotent.
 
+V0.5.1 adds PostgreSQL integration tests for fresh heartbeat preservation, stale task recovery, exhausted-attempt failure and concurrent recovery. The tests assert that the same stale task is recovered only once and that duplicate recovery events are not emitted.
+
 ## Retry Policy
 
 Permanent failures are not retried:
@@ -83,3 +85,16 @@ Retryable failures use deterministic backoff:
 ## Shutdown
 
 On `SIGINT` or `SIGTERM`, the worker stops claiming new jobs and waits for the current job up to `WORKER_SHUTDOWN_TIMEOUT_MS`. If the process exits before the job finishes, stale recovery handles it later.
+
+## Integration Verification
+
+Worker integration tests use a mock `RepositoryAnalyzer` and a real PostgreSQL database. They verify:
+
+- `PENDING -> RUNNING -> COMPLETED`
+- progress and heartbeat persistence
+- completed report transaction writes
+- retry scheduling for temporary GitHub failures
+- direct failure for permanent repository errors
+- max-attempt exhaustion
+
+The analyzer is mocked so tests never call GitHub.

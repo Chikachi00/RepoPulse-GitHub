@@ -8,6 +8,7 @@ import {
 } from "@repopulse/shared";
 
 import { getPrismaClient } from "../client.js";
+import { ReportSchemaInvalidError } from "../errors.js";
 import { REPORT_SCHEMA_VERSION } from "../types.js";
 
 function categoryScore(report: AnalysisReport, id: string): number | null {
@@ -53,7 +54,7 @@ export class AnalysisReportRepository {
   async findReusableReport(repositoryId: string, now = new Date()) {
     const ttlStart = new Date(now.getTime() - ANALYSIS_CONFIG.cacheTtlMinutes * 60 * 1000);
 
-    return this.prisma.analysisReportRecord.findFirst({
+    const candidates = await this.prisma.analysisReportRecord.findMany({
       where: {
         schemaVersion: REPORT_SCHEMA_VERSION,
         generatedAt: {
@@ -66,8 +67,20 @@ export class AnalysisReportRepository {
       },
       orderBy: {
         generatedAt: "desc"
-      }
+      },
+      take: 10
     });
+
+    for (const candidate of candidates) {
+      try {
+        parseAnalysisReport(candidate.reportJson);
+        return candidate;
+      } catch {
+        // Corrupt cache entries must not poison new analysis requests.
+      }
+    }
+
+    return null;
   }
 
   async saveCompletedReport(
@@ -155,7 +168,7 @@ export class AnalysisReportRepository {
 
     return {
       items: pageRows.map((row) => historyItem(row.reportJson, row)),
-      nextCursor: rows.length > limit ? (rows.at(-1)?.id ?? null) : null
+      nextCursor: rows.length > limit ? (pageRows.at(-1)?.id ?? null) : null
     };
   }
 
@@ -176,6 +189,14 @@ export class AnalysisReportRepository {
       }
     });
 
-    return row ? parseAnalysisReport(row.reportJson) : null;
+    if (!row) {
+      return null;
+    }
+
+    try {
+      return parseAnalysisReport(row.reportJson);
+    } catch {
+      throw new ReportSchemaInvalidError();
+    }
   }
 }
