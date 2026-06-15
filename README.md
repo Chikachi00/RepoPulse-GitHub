@@ -2,69 +2,170 @@
 
 ![CI](https://github.com/Chikachi00/RepoPulse-GitHub/actions/workflows/ci.yml/badge.svg)
 
-RepoPulse is an event-driven GitHub repository health monitoring platform that turns pull requests, issues, commits, releases and CI activity into explainable engineering insights.
+Event-driven GitHub repository health monitoring, explainable engineering insights, historical snapshots, and GitHub App automation.
 
-GitHub exposes repository activity across many separate pages. RepoPulse combines those signals into one explainable report, highlights areas that may need attention, and tracks how engineering health changes over time.
+[中文](#中文版) | [English](#english-version)
 
-## Current Status
+[GitHub](https://github.com/Chikachi00/RepoPulse-GitHub) · [Latest Release](https://github.com/Chikachi00/RepoPulse-GitHub/releases/latest) · [Architecture](docs/architecture.md) · [Metrics](docs/metrics-methodology.md) · [GitHub App Setup](docs/github-app-setup.md) · [Testing](docs/testing.md)
 
-V1.0 - Event-driven repository health monitoring.
+---
 
-## Why RepoPulse
+## 中文版
 
-RepoPulse is built for developers who want a concise, explainable view of repository engineering health without manually checking pull requests, issues, commits, releases, CI runs and project configuration in separate GitHub screens.
+### 项目简介
 
-It stores each completed analysis as a historical snapshot, so teams can compare what changed since the last run instead of treating repository health as a one-time report.
+RepoPulse 是一个事件驱动的 GitHub 仓库工程健康监控平台。它会将 Pull Request、Issue、Commit、Release、GitHub Actions 和仓库工程配置等分散信息，整理为可解释的工程指标、风险提示、改进建议和历史趋势。
 
-## Core Value
+它主要帮助开发者快速回答：
 
-### Repository Health
+- 这个仓库是否仍在持续维护？
+- Pull Request 和 Issue 的处理效率如何？
+- CI、测试、Lint、类型检查和构建流程是否完整？
+- 哪些文件最近修改最频繁？
+- 项目是否过度依赖少数贡献者？
+- 仓库状态相比上一次分析发生了什么变化？
 
-RepoPulse analyzes PR merge time, issue backlog and ageing, commit activity, release activity, CI reliability, testing and engineering practices, contributor concentration, file hotspots and an explainable health score.
+RepoPulse 支持手动分析，也支持通过 GitHub App Webhook 在默认分支 Push 或部分 Pull Request 活动发生后自动创建新的分析快照。
 
-### What Needs Attention
+当前版本：
 
-The dashboard highlights stale issue ratio, slow PR merging, CI failures and reliability, contributor concentration, frequently changed files, missing engineering practices and score category recommendations. These are engineering signals, not proof that a file or repository has bugs.
+```text
+V1.0 — Event-driven repository health monitoring
+```
 
-### What Changed Since Last Analysis
+### 快速链接
 
-Historical snapshots show Health Score changes, CI Success Rate changes, Stale Issue Ratio changes and Commit Activity changes. GitHub App webhooks can automatically create new snapshots after default-branch pushes and supported pull request activity.
+- [GitHub 仓库](https://github.com/Chikachi00/RepoPulse-GitHub)
+- [Latest Release](https://github.com/Chikachi00/RepoPulse-GitHub/releases/latest)
+- [English Version](#english-version)
+- [架构说明](docs/architecture.md)
+- [数据库结构](docs/database-schema.md)
+- [Worker 生命周期](docs/worker-lifecycle.md)
+- [指标方法论](docs/metrics-methodology.md)
+- [测试说明](docs/testing.md)
+- [GitHub App 配置](docs/github-app-setup.md)
+- [CHANGELOG](CHANGELOG.md)
 
-## Feature Highlights
+### 快速导航
 
-### Repository Analytics
+- [项目简介](#项目简介)
+- [核心功能](#核心功能)
+- [技术栈](#技术栈)
+- [架构和数据模型亮点](#架构和数据模型亮点)
+- [本地运行](#本地运行)
+- [GitHub App 配置](#github-app-配置)
+- [测试与验证](#测试与验证)
+- [已知限制](#已知限制)
 
-- Pull request merge efficiency
-- Issue ageing and backlog
-- Commit and release trends
-- File hotspots
-- Maintenance concentration
-- GitHub Actions reliability
-- Engineering practice detection
-- Explainable health scoring
+### 核心功能
 
-### Event-driven Monitoring
+#### 仓库健康总览
 
-- Signed GitHub App Webhooks
-- Installation lifecycle tracking
-- Background Webhook Worker
-- Default-branch push refresh
-- Supported pull request activity refresh
-- Installation token authentication
-- Private repository authorization protection
+- 输入 GitHub 仓库 URL 后创建持久化分析任务。
+- 展示 RepoPulse Health Score、等级、置信度和分类得分。
+- 分类展示 Collaboration、Activity & Delivery、Automation & Testing、Project Hygiene。
+- 每个分类提供可解释的评分依据和改进建议。
+- 缺失数据不会被简单当作零分，而是按可用指标重新归一化权重。
+- Health Score 是工程信号汇总，不代表代码质量、安全性或项目价值的绝对结论。
 
-### Backend Engineering
+#### Pull Request 与 Issue 分析
 
-- PostgreSQL persistent queue
+- 统计 Pull Request 合并数量和开放数量。
+- 分析平均值、中位数和 P75 合并耗时。
+- 识别最老的开放 Pull Request。
+- 统计开放 Issue、陈旧 Issue 和陈旧比例。
+- 展示 Issue 年龄分布和最老开放 Issue。
+- 对 GitHub API 抽样和数据上限提供明确提示。
+
+#### Commit、文件热点与贡献者分析
+
+- 分析近期 Commit 活动和连续周趋势。
+- 展示活跃周数量、最近 Push 时间和提交趋势。
+- 根据文件触达次数和 Churn 识别高频修改文件。
+- 使用启发式规则识别疑似修复热点。
+- 分析贡献者份额、前三贡献者占比和 HHI 集中度。
+- 贡献者集中度只作为维护风险信号，不直接等同于质量问题。
+
+#### Release、CI 与工程实践
+
+- 展示 Release 数量、稳定版本和发布时间趋势。
+- 分析 GitHub Actions Workflow 和近期 Workflow Runs。
+- 统计 CI 成功率、失败数、取消数和运行时长。
+- 静态检测测试文件、测试框架和测试命令。
+- 检测 Lint、Format、Typecheck、Build 和 Coverage 配置。
+- 检测 README、License、CONTRIBUTING、CHANGELOG、SECURITY、CODEOWNERS 等治理文件。
+- 检测 Dependabot 或 Renovate 等依赖更新自动化配置。
+- RepoPulse 不会执行被分析仓库中的代码。
+
+#### 历史快照与趋势
+
+- 每次完成的分析都会保存为独立历史快照。
+- 完整 Analysis Report 以 JSONB 保存。
+- 常用分数、等级、置信度和时间字段单独保存，便于历史查询。
+- Dashboard 展示 Health Score 和分类分数趋势。
+- 支持查看历史快照并返回最新结果。
+- 展示 Health Score、CI 成功率、陈旧 Issue 比例和 Commit 活动变化。
+
+#### GitHub App 与自动刷新
+
+- 使用 HMAC SHA-256 验证 GitHub Webhook 签名。
+- 使用 Delivery ID 和 Payload Hash 做幂等处理与冲突检测。
+- 持久化 GitHub App Installation、授权仓库和 Webhook Delivery。
+- Webhook API 只负责验签、规范化和持久化。
+- Webhook Worker 异步处理 Installation 生命周期和仓库授权关系。
+- 默认分支 Push 和支持的 Pull Request 事件可触发新的 FULL AnalysisRun。
+- Installation Token 只缓存在内存中，不写入数据库或日志。
+- 私有仓库必须存在有效 GitHub App 授权，不会回退匿名访问。
+
+#### 后台任务与恢复机制
+
+- API 只创建任务和查询结果，完整 GitHub 分析由独立 Worker 执行。
+- PostgreSQL `FOR UPDATE SKIP LOCKED` 用于多个 Worker 安全领取任务。
+- 支持任务优先级、availableAt、最大尝试次数和重试退避。
+- Worker 使用 Heartbeat 更新运行状态。
+- Stale Recovery 可恢复因 Worker 中断而遗留的任务。
+- 完成报告、任务状态和事件记录通过事务原子保存。
+- 兼容的近期报告可以作为持久缓存复用。
+
+### 技术栈
+
+#### Frontend
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Recharts
+
+#### API 与分析服务
+
+- Node.js
+- Fastify
+- TypeScript
+- Zod
+- Octokit / GitHub REST API
+- Undici ProxyAgent
+
+#### 数据库与后台任务
+
+- PostgreSQL
+- Prisma ORM
+- JSONB
+- Database-backed Worker Queue
 - `FOR UPDATE SKIP LOCKED`
-- Worker retry and heartbeat recovery
-- JSONB historical snapshots
-- Persistent cache
-- Unit tests
-- PostgreSQL integration tests
-- GitHub Actions CI
 
-## Architecture
+#### 测试与工程化
+
+- Vitest
+- PostgreSQL Integration Tests
+- Temporary Schema Isolation
+- ESLint
+- Prettier
+- TypeScript Strict Mode
+- GitHub Actions
+- PostgreSQL 17 CI Service
+
+### 架构和数据模型亮点
 
 ```mermaid
 flowchart LR
@@ -79,7 +180,6 @@ flowchart LR
     WebhookAPI --> DB
 
     DB --> WebhookWorker[Webhook Worker]
-    WebhookWorker --> DB
     WebhookWorker --> AnalysisQueue[AnalysisRun Queue]
     AnalysisQueue --> AnalysisWorker
 
@@ -87,83 +187,65 @@ flowchart LR
     History --> API
 ```
 
-The Analysis Worker uses retry, heartbeat and stale recovery. The Webhook API quickly verifies signatures, normalizes payloads and persists delivery records. Installation tokens are cached only in memory. Reports are stored as JSONB snapshots, while PostgreSQL also tracks task state, events and selected query-friendly score fields.
+- Monorepo 包含 `apps/web`、`apps/api`、`apps/worker`、`packages/shared`、`packages/database` 和 `packages/analysis-engine`。
+- API 不直接执行完整分析，只负责输入校验、任务创建、状态查询和历史查询。
+- Analysis Worker 负责 GitHub 数据获取、指标计算、健康评分和报告保存。
+- Webhook Worker 负责 Installation 生命周期、仓库授权关系和自动分析触发。
+- `AnalysisRun` 保存持久化任务状态、进度、重试和触发来源。
+- `AnalysisReportRecord` 保存完整 JSONB 快照与查询友好的索引字段。
+- `GitHubInstallation` 和 `GitHubInstallationRepository` 保存 GitHub App 授权关系。
+- `WebhookDelivery` 保存去重、状态、重试和最小规范化 Payload。
+- Installation Token 只保存在进程内存中。
+- RepoPulse 不 Clone 仓库、不安装仓库依赖，也不执行被分析仓库中的代码。
 
-## Screenshots
+### 本地运行
 
-<!-- Add dashboard overview screenshot before publishing the v1.0 release. -->
-<!-- Add engineering metrics screenshot before publishing the v1.0 release. -->
-<!-- Add history trend screenshot before publishing the v1.0 release. -->
-<!-- Add GitHub App integration screenshot before publishing the v1.0 release. -->
-
-Screenshot placeholders are intentionally comments until real images are captured from the running application.
-
-## Engineering Decisions
-
-### Why PostgreSQL instead of Redis?
-
-RepoPulse already depends on PostgreSQL for repositories, analysis runs, events and report snapshots. Keeping queue state and report writes in one transactional system makes the V1.0 architecture simpler and easier to verify.
-
-PostgreSQL row locking with `FOR UPDATE SKIP LOCKED` lets multiple workers safely claim work without adding Redis, BullMQ or another infrastructure dependency.
-
-### Why JSONB reports?
-
-Analysis reports will evolve as RepoPulse learns new signals. JSONB snapshots let each historical report remain independently readable even as the schema changes.
-
-Frequently queried values such as generated time, health score, grade, confidence and category scores are also extracted into normal columns for efficient history views.
-
-### Why asynchronous webhook processing?
-
-GitHub webhooks should receive a fast HTTP response. RepoPulse keeps the API path small: verify the HMAC signature, normalize the payload and persist the delivery.
-
-The Webhook Worker updates installation state and queues analysis runs in the background. Long-running GitHub analysis happens in the Analysis Worker, not inside the webhook request.
-
-## Metrics Methodology
-
-See [docs/metrics-methodology.md](docs/metrics-methodology.md) for metric definitions, sampling limits, confidence levels and the health score methodology.
-
-RepoPulse Health Score is an explainable engineering signal summary, not a definitive measure of code quality, security, maintainability or project value.
-
-## Local Development
-
-Install dependencies and generate Prisma Client:
+安装依赖并生成 Prisma Client：
 
 ```bash
 npm install
 npm run db:generate
 ```
 
-Start PostgreSQL with Docker Compose, or provide any compatible PostgreSQL database through `DATABASE_URL`:
+准备 PostgreSQL。可以使用仓库提供的 Docker Compose：
 
 ```bash
 npm run dev:services
 ```
 
-Apply local migrations and start the apps:
+也可以连接任意兼容 PostgreSQL 数据库，只需要正确设置 `DATABASE_URL`。
+
+应用 Migration：
 
 ```bash
 npm run db:migrate
+```
+
+分别启动：
+
+```bash
 npm run dev:api
 npm run dev:worker
 npm run dev:web
 ```
 
-After PostgreSQL is running, API, Worker and Web can also be started together:
+也可以在 PostgreSQL 已运行后同时启动：
 
 ```bash
 npm run dev:all
 ```
 
-`dev:all` does not delete, reset or recreate the database.
+`dev:all` 不会删除、重置或重建数据库。
 
-## Environment
+### 环境变量
 
-Create `.env` from `.env.example`.
+从 `.env.example` 创建本地 `.env`：
 
 ```env
 DATABASE_URL=postgresql://repopulse:repopulse@localhost:5432/repopulse?schema=public
 TEST_DATABASE_URL=postgresql://repopulse:repopulse@localhost:5432/repopulse
 API_PORT=3001
+
 GITHUB_TOKEN=
 GITHUB_APP_ID=
 GITHUB_APP_SLUG=
@@ -172,33 +254,33 @@ GITHUB_APP_PRIVATE_KEY_PATH=
 GITHUB_WEBHOOK_SECRET=
 ```
 
-Do not commit `.env`, real database URLs for private systems, GitHub tokens, GitHub App private keys or webhook secrets.
+不要提交 `.env`、Token、Private Key、Webhook Secret、Installation Token、私有数据库凭据或 Webhook 原始 Payload。
 
-## GitHub App Setup
+### GitHub App 配置
 
-GitHub App setup is documented in [docs/github-app-setup.md](docs/github-app-setup.md).
+完整配置说明见 [docs/github-app-setup.md](docs/github-app-setup.md)。
 
-V1.0 supports installation lifecycle tracking, repository authorization mapping, signed webhook delivery persistence and automatic full refresh after default-branch pushes or supported pull request actions.
+V1.0 支持：
 
-Private repository support is intended for a single-owner or self-hosted deployment, not a public multi-tenant SaaS.
+- Installation 生命周期同步
+- 授权仓库映射
+- Signed Webhook Delivery
+- 默认分支 Push 自动刷新
+- 部分 Pull Request Action 自动刷新
+- Installation Token 身份认证
+- 私有仓库授权保护
 
-## Testing
+私有仓库功能主要面向单用户或 Self-hosted 部署，不代表已经具备公共多租户 SaaS 所需的完整权限隔离。
 
-Fast unit tests do not require PostgreSQL:
+### 测试与验证
+
+快速单元测试：
 
 ```bash
 npm run test
 ```
 
-PostgreSQL integration tests require `TEST_DATABASE_URL` and a real PostgreSQL database:
-
-```bash
-npm run test:integration
-```
-
-Integration tests create a unique temporary schema, apply committed migrations with `prisma migrate deploy`, run database-backed tests and drop the schema afterward. They do not call the real GitHub API.
-
-Run the full local verification suite:
+完整本地检查：
 
 ```bash
 npm run db:generate
@@ -209,22 +291,257 @@ npm run format:check
 npm run build
 ```
 
-GitHub Actions runs the same checks plus PostgreSQL integration tests against a PostgreSQL 17 service.
+PostgreSQL 集成测试需要设置 `TEST_DATABASE_URL`：
 
-## Limitations
+```bash
+npm run test:integration
+```
 
-- RepoPulse is primarily intended for public repositories and single-user or self-hosted private repository monitoring.
-- OAuth and multi-tenant permission isolation are not implemented.
-- Webhook automatic refresh covers default-branch `push` and selected `pull_request` actions only.
-- Analysis can be affected by GitHub API rate limits and configured sampling caps.
-- Engineering practice detection is static and heuristic.
-- Health Score is not a code quality score, security audit or project value judgment.
+Integration Tests 会创建唯一临时 PostgreSQL Schema、应用已提交的 Prisma Migration、验证持久化任务和 Worker，并在测试结束后删除临时 Schema。测试不会访问真实 GitHub API。
+
+GitHub Actions 使用 PostgreSQL 17 Service 执行 Migration、Typecheck、Unit Tests、Integration Tests、Lint、Format Check 和 Build。
+
+### 已知限制
+
+- RepoPulse 主要面向公开仓库和单用户 / Self-hosted 私有仓库监控。
+- 当前未实现 GitHub OAuth 和公共多租户权限隔离。
+- Webhook 自动刷新只覆盖默认分支 `push` 和部分 `pull_request` Action。
+- GitHub API Rate Limit 和抽样上限可能影响部分指标完整性。
+- 工程实践检测基于静态规则和启发式判断。
+- 文件热点和疑似修复热点不代表文件一定存在缺陷。
+- Health Score 不是代码质量评分、安全审计或项目价值判断。
+- RepoPulse 不会执行被分析仓库中的代码。
+- 当前尚未提供正式在线 Demo 和生产部署模板。
+
+### 截图 / Demo
+
+截图待补充：
+
+```text
+docs/assets/dashboard-overview.png
+docs/assets/engineering-metrics.png
+docs/assets/history-trend.png
+docs/assets/github-app-integration.png
+```
+
+### License
+
+MIT License
+
+---
+
+## English Version
+
+### Overview
+
+RepoPulse is an event-driven GitHub repository health monitoring platform that turns pull requests, issues, commits, releases, GitHub Actions activity, and repository engineering signals into explainable insights and historical trends.
+
+It helps developers understand whether a repository is still actively maintained, how efficiently pull requests and issues are handled, whether CI and engineering practices are in place, which files change most frequently, and what changed since the previous analysis.
+
+RepoPulse supports manual analysis and GitHub App webhook automation. Default-branch pushes and supported pull request activity can create new full analysis snapshots.
+
+Current release:
+
+```text
+V1.0 — Event-driven repository health monitoring
+```
+
+### Quick Links
+
+- [GitHub Repository](https://github.com/Chikachi00/RepoPulse-GitHub)
+- [Latest Release](https://github.com/Chikachi00/RepoPulse-GitHub/releases/latest)
+- [中文版](#中文版)
+- [Architecture](docs/architecture.md)
+- [Database Schema](docs/database-schema.md)
+- [Worker Lifecycle](docs/worker-lifecycle.md)
+- [Metrics Methodology](docs/metrics-methodology.md)
+- [Testing](docs/testing.md)
+- [GitHub App Setup](docs/github-app-setup.md)
+- [CHANGELOG](CHANGELOG.md)
+
+### Core Features
+
+#### Repository Health
+
+- Persistent analysis jobs created from GitHub repository URLs.
+- Explainable Health Score, grade, confidence, and category scores.
+- Collaboration, Activity & Delivery, Automation & Testing, and Project Hygiene categories.
+- Category-level reasons and recommendations.
+- Missing-data weight normalization instead of forcing unavailable signals to zero.
+
+#### Pull Requests and Issues
+
+- Merged and open pull request metrics.
+- Average, median, and P75 merge time.
+- Oldest open pull request.
+- Open issues, stale issues, stale ratio, age buckets, and oldest issue.
+- Explicit sampling and GitHub API coverage notes.
+
+#### Commits, Hotspots, and Contributors
+
+- Recent commit activity and weekly trends.
+- Active weeks and recent push time.
+- File touch and churn hotspots.
+- Heuristic suspected-fix hotspots.
+- Contributor share, top-three share, and HHI concentration.
+
+#### Releases, CI, and Engineering Practices
+
+- Release activity and stable-version trends.
+- GitHub Actions workflow and run analytics.
+- CI success rate, failures, cancellations, and duration.
+- Static detection of tests, lint, format, typecheck, build, and coverage configuration.
+- Detection of README, License, CONTRIBUTING, CHANGELOG, SECURITY, CODEOWNERS, and dependency-update automation.
+- No code from analyzed repositories is executed.
+
+#### Historical Snapshots
+
+- Independent snapshot for every completed analysis.
+- Complete report storage in JSONB.
+- Query-friendly score and timestamp columns.
+- Overall and category score trends.
+- Historical snapshot viewing and return-to-latest flow.
+- Changes in Health Score, CI success rate, stale issue ratio, and commit activity.
+
+#### GitHub App Automation
+
+- HMAC SHA-256 webhook verification.
+- Delivery ID and payload hash idempotency.
+- Persistent installation, repository mapping, and webhook delivery state.
+- Background webhook processing.
+- Full refresh after default-branch pushes and supported pull request actions.
+- Installation tokens cached only in memory.
+- Active GitHub App authorization required for private repositories.
+
+#### Background Jobs
+
+- Full GitHub analysis runs outside the API process.
+- PostgreSQL `FOR UPDATE SKIP LOCKED` job claiming.
+- Job priority, availability time, retry limits, and backoff.
+- Worker heartbeat and stale-task recovery.
+- Transactional report, run-state, and lifecycle-event persistence.
+- Persistent recent-report cache reuse.
+
+### Tech Stack
+
+- React, TypeScript, Vite, Tailwind CSS, Recharts
+- Node.js, Fastify, Zod
+- Octokit / GitHub REST API
+- PostgreSQL, Prisma ORM, JSONB
+- Database-backed workers with `FOR UPDATE SKIP LOCKED`
+- Vitest and PostgreSQL integration tests
+- ESLint, Prettier, TypeScript Strict Mode
+- GitHub Actions with PostgreSQL 17
+
+### Architecture
+
+```mermaid
+flowchart LR
+    Web[React Web] --> API[Fastify API]
+    API --> DB[(PostgreSQL)]
+
+    DB --> AnalysisWorker[Analysis Worker]
+    AnalysisWorker --> GitHubAPI[GitHub REST API]
+    AnalysisWorker --> DB
+
+    GitHubApp[GitHub App] -->|Signed Webhook| WebhookAPI[Webhook API]
+    WebhookAPI --> DB
+
+    DB --> WebhookWorker[Webhook Worker]
+    WebhookWorker --> AnalysisQueue[AnalysisRun Queue]
+    AnalysisQueue --> AnalysisWorker
+
+    DB --> History[Historical Snapshots]
+    History --> API
+```
+
+The API validates requests and manages persistent state. The Analysis Worker fetches GitHub data, calculates metrics, and saves reports. The Webhook Worker updates GitHub App installation state and triggers automatic full analyses.
+
+Installation tokens stay in process memory. RepoPulse does not clone repositories, install their dependencies, or execute their code.
+
+### Local Setup
+
+```bash
+npm install
+npm run db:generate
+npm run dev:services
+npm run db:migrate
+```
+
+Start each application:
+
+```bash
+npm run dev:api
+npm run dev:worker
+npm run dev:web
+```
+
+Or run them together after PostgreSQL is ready:
+
+```bash
+npm run dev:all
+```
+
+A compatible external PostgreSQL database can be used instead of Docker Compose.
+
+### Environment
+
+Create `.env` from `.env.example` and configure:
+
+```env
+DATABASE_URL=
+TEST_DATABASE_URL=
+API_PORT=3001
+GITHUB_TOKEN=
+GITHUB_APP_ID=
+GITHUB_APP_SLUG=
+GITHUB_APP_PRIVATE_KEY_BASE64=
+GITHUB_APP_PRIVATE_KEY_PATH=
+GITHUB_WEBHOOK_SECRET=
+```
+
+Never commit credentials, private keys, tokens, webhook secrets, installation tokens, private database URLs, or raw webhook payloads.
+
+### GitHub App Setup
+
+See [docs/github-app-setup.md](docs/github-app-setup.md).
+
+Private repository support is intended for single-owner or self-hosted deployments, not a public multi-tenant SaaS.
+
+### Testing
+
+```bash
+npm run db:generate
+npm run typecheck
+npm run test
+npm run lint
+npm run format:check
+npm run build
+```
+
+Run PostgreSQL integration tests with `TEST_DATABASE_URL` configured:
+
+```bash
+npm run test:integration
+```
+
+Integration tests use isolated temporary schemas and never call the real GitHub API.
+
+### Known Limitations
+
+- Public repositories and single-user or self-hosted private repository monitoring are the primary use cases.
+- GitHub OAuth and public multi-tenant authorization isolation are not implemented.
+- Webhook refresh covers default-branch `push` and selected `pull_request` actions only.
+- GitHub API limits and sampling caps may affect metric completeness.
+- Engineering-practice detection is static and heuristic.
+- Health Score is not a code-quality score, security audit, or project-value judgment.
 - RepoPulse never executes code from the analyzed repository.
+- A hosted production demo and deployment template are not included yet.
 
-## Release Preparation
+### Screenshots / Demo
 
-See [CHANGELOG.md](CHANGELOG.md) and [docs/release-checklist.md](docs/release-checklist.md). This repository is ready for a `v1.0.0` tag only after CI is green and real screenshots have been reviewed.
+Screenshots to be added.
 
-## License
+### License
 
-MIT
+MIT License
