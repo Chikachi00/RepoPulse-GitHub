@@ -52,6 +52,37 @@ export class RepositoryRepository {
     });
   }
 
+  async upsertRepositoryByGitHubId(
+    input: RepositoryInput & { githubId: bigint | number }
+  ): Promise<Repository> {
+    const githubId = BigInt(input.githubId);
+    const normalizedName = normalizeRepositoryName(input.owner, input.repo);
+    const fullName = input.fullName ?? `${input.owner}/${input.repo}`;
+    const existing = await this.prisma.repository.findUnique({ where: { githubId } });
+
+    if (existing) {
+      return this.prisma.repository.update({
+        where: { id: existing.id },
+        data: {
+          owner: input.owner,
+          name: input.repo,
+          fullName,
+          normalizedName,
+          htmlUrl: input.htmlUrl ?? undefined,
+          defaultBranch: input.defaultBranch ?? undefined,
+          primaryLanguage: input.primaryLanguage ?? undefined,
+          isArchived: input.isArchived ?? undefined,
+          isFork: input.isFork ?? undefined
+        }
+      });
+    }
+
+    return this.upsertRepository({
+      ...input,
+      githubId
+    });
+  }
+
   async markAnalyzed(repositoryId: string, analyzedAt: Date): Promise<void> {
     await this.prisma.repository.update({
       where: { id: repositoryId },

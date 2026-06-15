@@ -2,16 +2,30 @@
 
 ![CI](https://github.com/Chikachi00/RepoPulse-GitHub/actions/workflows/ci.yml/badge.svg)
 
-RepoPulse is a GitHub repository health analytics platform. A user enters a public GitHub repository URL, and RepoPulse creates a persistent analysis task that is processed by a database-backed worker. Completed reports are stored as historical snapshots.
+RepoPulse is an event-driven GitHub repository health monitoring platform that turns pull requests, issues, commits, releases and CI activity into explainable engineering insights.
 
 ## Current Status
 
-V0.5.1 PostgreSQL integration tests, end-to-end verification harness and GitHub Actions CI. This version hardens the V0.5 persistence architecture with real PostgreSQL tests for migrations, job claiming, transactions, cache reuse, history, retry, recovery and cleanup.
+V0.6 GitHub App webhook automatic refresh. RepoPulse can accept signed GitHub App webhooks, persist installation and repository authorization state, process webhook deliveries in a background worker and queue full repository analyses after default-branch pushes or supported pull request activity.
 
-## What V0.5.1 Supports
+## Product Value
+
+### Repository Health
+
+RepoPulse analyzes pull requests, issues, commits, releases, GitHub Actions and engineering practice signals, then stores an explainable health snapshot for the repository.
+
+### What Needs Attention
+
+The dashboard highlights stale issues, slow pull request merge times, CI reliability, file hotspots, maintenance concentration and score category recommendations without inventing hidden metrics.
+
+### What Changed Since Last Analysis
+
+Historical snapshots make it possible to compare health score, CI success rate, stale issue ratio and commit activity over time. Webhook refreshes keep new snapshots flowing after repository activity.
+
+## What V0.6 Supports
 
 - PostgreSQL development database through Docker Compose
-- Prisma schema and migration: `20260614143000_init_persistent_analysis`
+- Prisma migrations for persistent analysis and GitHub App webhook state
 - Persistent `Repository`, `AnalysisRun`, `AnalysisReportRecord` and `AnalysisEvent` records
 - API-created pending jobs without running full analysis in the API process
 - Worker job claiming with row locks and `FOR UPDATE SKIP LOCKED`
@@ -20,6 +34,14 @@ V0.5.1 PostgreSQL integration tests, end-to-end verification harness and GitHub 
 - Persistent 15-minute cache reuse through recent completed reports
 - Repository history list and historical snapshot APIs
 - Dashboard history trend and snapshot viewing
+- Signed GitHub webhook ingestion with HMAC SHA-256 verification
+- GitHub App installation, suspension, deletion and repository mapping persistence
+- Webhook worker delivery claiming, retry and ignored-event handling
+- Automatic full analysis refresh after default-branch `push` events
+- Automatic full analysis refresh after supported `pull_request` actions
+- Installation token client selection for connected repositories
+- Private repositories require an active GitHub App installation and never fall back to anonymous GitHub requests
+- Repository integration status card in the dashboard
 - Explicit retention cleanup CLI
 - PostgreSQL integration tests using isolated temporary schemas
 - GitHub Actions CI with a PostgreSQL 17 service
@@ -33,6 +55,14 @@ POST /api/analyses
   -> RepositoryAnalyzer
   -> AnalysisReportRecord JSONB snapshot
   -> History API
+
+GitHub App webhook
+  -> WebhookDelivery
+  -> Webhook worker claim with row lock
+  -> Installation or repository mapping update
+  -> FULL webhook AnalysisRun
+  -> Analysis worker with installation token
+  -> new historical snapshot
 ```
 
 The API creates and reads database records. The Worker performs GitHub analysis and writes reports. Shared GitHub and metrics logic lives in `@repopulse/analysis-engine`.
@@ -71,6 +101,11 @@ DATABASE_URL=postgresql://repopulse:repopulse@localhost:5432/repopulse?schema=pu
 TEST_DATABASE_URL=postgresql://repopulse:repopulse@localhost:5432/repopulse
 API_PORT=3001
 GITHUB_TOKEN=
+GITHUB_APP_ID=
+GITHUB_APP_SLUG=
+GITHUB_APP_PRIVATE_KEY_BASE64=
+GITHUB_APP_PRIVATE_KEY_PATH=
+GITHUB_WEBHOOK_SECRET=
 WORKER_ID=
 WORKER_POLL_INTERVAL_MS=2000
 WORKER_HEARTBEAT_INTERVAL_MS=10000
@@ -83,6 +118,8 @@ HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
 Do not commit `.env`, real database URLs for private systems, or GitHub tokens.
+
+GitHub App setup details live in [docs/github-app-setup.md](docs/github-app-setup.md).
 
 ## Prisma Commands
 
@@ -177,20 +214,20 @@ RepoPulse analyzes its own repository as a dogfooding example. After CI is pushe
 ## Current Limitations
 
 - No Redis, BullMQ, Kafka or external queue.
-- No GitHub App, OAuth, private repository support or webhook ingestion.
-- No scheduled analysis UI.
+- GitHub App private repository support in V0.6 is intended for single-owner or self-hosted deployments, not a public multi-tenant SaaS.
+- No OAuth, Marketplace listing, workspace model or multi-tenant administration.
+- No scheduler, weekly analysis or partial refresh UI.
+- Webhook automatic refresh only supports `installation`, `installation_repositories`, `push` and `pull_request`.
 - Worker and API are separate processes but still intended for local development.
 - Historical snapshots are stored as JSONB plus selected indexed fields, not fully normalized metrics tables.
 
 ## Roadmap
 
-- GitHub App
-- Webhook ingestion
-- Repository installation records
-- Incremental refresh
-- Scheduled weekly analyses
-- Private repository support
-- GitHub installation token lifecycle
+- Deployment guide
+- README screenshots
+- Architecture diagram
+- Demo video
+- `v1.0.0` release
 
 ## License
 

@@ -5,6 +5,16 @@ export interface NormalizedWebhookEvent {
   eventName: string;
   action: string | null;
   installationId: string | null;
+  installation: {
+    id: string;
+    accountId: string | null;
+    accountLogin: string | null;
+    accountType: string | null;
+    targetType: string | null;
+    repositorySelection: string | null;
+    permissions: Record<string, unknown>;
+    events: string[];
+  } | null;
   repository: {
     githubId: string;
     owner: string;
@@ -23,10 +33,24 @@ export interface NormalizedWebhookEvent {
   releaseId: string | null;
   repositoryIdsAdded: string[];
   repositoryIdsRemoved: string[];
+  repositories: NormalizedWebhookRepository[];
+  repositoriesAdded: NormalizedWebhookRepository[];
+  repositoriesRemoved: NormalizedWebhookRepository[];
+}
+
+export interface NormalizedWebhookRepository {
+  githubId: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  private: boolean;
+  defaultBranch: string | null;
 }
 
 const ownerSchema = z.object({
-  login: z.string().optional()
+  login: z.string().optional(),
+  id: z.union([z.number(), z.string()]).optional(),
+  type: z.string().optional()
 });
 
 const repositorySchema = z.object({
@@ -43,7 +67,12 @@ const webhookPayloadSchema = z
     action: z.string().optional(),
     installation: z
       .object({
-        id: z.union([z.number(), z.string()])
+        id: z.union([z.number(), z.string()]),
+        account: ownerSchema.optional(),
+        target_type: z.string().nullable().optional(),
+        repository_selection: z.string().nullable().optional(),
+        permissions: z.record(z.string(), z.unknown()).optional(),
+        events: z.array(z.string()).optional()
       })
       .optional(),
     repository: repositorySchema.optional(),
@@ -75,6 +104,7 @@ const webhookPayloadSchema = z
         id: z.union([z.number(), z.string()]).optional()
       })
       .optional(),
+    repositories: z.array(repositorySchema).optional(),
     repositories_added: z.array(repositorySchema).optional(),
     repositories_removed: z.array(repositorySchema).optional()
   })
@@ -88,28 +118,45 @@ function idToString(value: number | string | undefined): string | null {
   return String(value);
 }
 
+function normalizeRepository(
+  repository: z.infer<typeof repositorySchema>
+): NormalizedWebhookRepository {
+  return {
+    githubId: String(repository.id),
+    owner: repository.owner?.login ?? repository.full_name.split("/")[0] ?? "",
+    name: repository.name,
+    fullName: repository.full_name,
+    private: repository.private ?? false,
+    defaultBranch: repository.default_branch ?? null
+  };
+}
+
 export function normalizeGitHubWebhookPayload(
   deliveryId: string,
   eventName: string,
   payload: unknown
 ): NormalizedWebhookEvent {
   const parsed = webhookPayloadSchema.parse(payload);
-  const repository = parsed.repository
-    ? {
-        githubId: String(parsed.repository.id),
-        owner: parsed.repository.owner?.login ?? parsed.repository.full_name.split("/")[0] ?? "",
-        name: parsed.repository.name,
-        fullName: parsed.repository.full_name,
-        private: parsed.repository.private ?? false,
-        defaultBranch: parsed.repository.default_branch ?? null
-      }
-    : null;
+  const repository = parsed.repository ? normalizeRepository(parsed.repository) : null;
+  const installationId = idToString(parsed.installation?.id);
 
   return {
     deliveryId,
     eventName,
     action: parsed.action ?? null,
-    installationId: idToString(parsed.installation?.id),
+    installationId,
+    installation: parsed.installation
+      ? {
+          id: installationId ?? "",
+          accountId: idToString(parsed.installation.account?.id),
+          accountLogin: parsed.installation.account?.login ?? null,
+          accountType: parsed.installation.account?.type ?? null,
+          targetType: parsed.installation.target_type ?? null,
+          repositorySelection: parsed.installation.repository_selection ?? null,
+          permissions: parsed.installation.permissions ?? {},
+          events: parsed.installation.events ?? []
+        }
+      : null,
     repository,
     senderLogin: parsed.sender?.login ?? null,
     ref: parsed.ref ?? null,
@@ -120,6 +167,9 @@ export function normalizeGitHubWebhookPayload(
     issueNumber: parsed.issue?.number ?? null,
     releaseId: idToString(parsed.release?.id),
     repositoryIdsAdded: parsed.repositories_added?.map((repo) => String(repo.id)) ?? [],
-    repositoryIdsRemoved: parsed.repositories_removed?.map((repo) => String(repo.id)) ?? []
+    repositoryIdsRemoved: parsed.repositories_removed?.map((repo) => String(repo.id)) ?? [],
+    repositories: parsed.repositories?.map(normalizeRepository) ?? [],
+    repositoriesAdded: parsed.repositories_added?.map(normalizeRepository) ?? [],
+    repositoriesRemoved: parsed.repositories_removed?.map(normalizeRepository) ?? []
   };
 }

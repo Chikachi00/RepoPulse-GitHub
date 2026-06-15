@@ -1,4 +1,8 @@
-import { GitHubServiceError, type RepositoryAnalyzer } from "@repopulse/analysis-engine";
+import {
+  GitHubAppError,
+  GitHubServiceError,
+  type RepositoryAnalyzer
+} from "@repopulse/analysis-engine";
 import {
   AnalysisReportRepository,
   AnalysisRunRepository,
@@ -24,6 +28,13 @@ interface RepositoryRecord {
 
 function mapError(error: unknown): { code: string; message: string } {
   if (error instanceof GitHubServiceError) {
+    return {
+      code: error.code,
+      message: error.message
+    };
+  }
+
+  if (error instanceof GitHubAppError) {
     return {
       code: error.code,
       message: error.message

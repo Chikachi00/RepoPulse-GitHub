@@ -4,5 +4,8 @@ export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.analysisEvent.deleteMany();
   await prisma.analysisReportRecord.deleteMany();
   await prisma.analysisRun.deleteMany();
+  await prisma.webhookDelivery.deleteMany();
+  await prisma.gitHubInstallationRepository.deleteMany();
+  await prisma.gitHubInstallation.deleteMany();
   await prisma.repository.deleteMany();
 }

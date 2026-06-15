@@ -1,4 +1,9 @@
 export { createGitHubClient, OctokitGitHubClient } from "./github/github-client.js";
+export type {
+  GitHubAuthenticationSource,
+  GitHubClient,
+  OctokitLike
+} from "./github/github-client.js";
 export { GitHubServiceError, mapGitHubError } from "./github/github-errors.js";
 export {
   GitHubRepositoryAnalyzer,

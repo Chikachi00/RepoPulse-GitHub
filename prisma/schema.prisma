@@ -92,7 +92,7 @@ model AnalysisRun {
   triggerEvent      String?
   requestedSections Json?
   baseAnalysisRunId String?
-  webhookDeliveryId String?
+  webhookDeliveryId String? @unique
   webhookDelivery   WebhookDelivery? @relation(fields: [webhookDeliveryId], references: [id], onDelete: SetNull)
   deduplicationKey  String? @unique
   analysisMode      String?
@@ -244,11 +244,12 @@ model WebhookDelivery {
 
   errorCode             String?
   errorMessage          String?
+  processingMessage     String?
 
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  analysisRuns          AnalysisRun[]
+  analysisRun           AnalysisRun?
 
   @@index([status, availableAt, receivedAt])
   @@index([githubRepositoryId, receivedAt])

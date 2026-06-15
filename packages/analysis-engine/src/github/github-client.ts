@@ -37,7 +37,9 @@ type GetContentParameters = RestEndpointMethodTypes["repos"]["getContent"]["para
 type RateLimitResponse = RestEndpointMethodTypes["rateLimit"]["get"]["response"]["data"];
 type ResponseHeaders = Record<string, string | number | undefined>;
 
-interface OctokitLike {
+export type GitHubAuthenticationSource = "installation" | "personal_token" | "anonymous";
+
+export interface OctokitLike {
   rest: {
     repos: {
       get(
@@ -151,6 +153,7 @@ export interface GetFileContentOptions {
 
 export interface GitHubClient {
   readonly authenticated: boolean;
+  readonly authentication: GitHubAuthenticationSource;
   getRepository(owner: string, repo: string): Promise<GitHubRepositoryResponse>;
   listPullRequests(options: ListPullRequestsOptions): Promise<GitHubPullRequestResponse[]>;
   listIssues(options: ListIssuesOptions): Promise<GitHubIssueResponse[]>;
@@ -187,12 +190,14 @@ function createProxyFetch(proxyUrl: string): typeof fetch {
 export class OctokitGitHubClient implements GitHubClient {
   private readonly octokit: OctokitLike;
   readonly authenticated: boolean;
+  readonly authentication: GitHubAuthenticationSource;
   private rateLimitRemaining: number | null = null;
 
-  constructor(token?: string, octokit?: OctokitLike) {
+  constructor(token?: string, octokit?: OctokitLike, authentication?: GitHubAuthenticationSource) {
     const proxyUrl = getProxyUrl();
     const proxyFetch = proxyUrl ? createProxyFetch(proxyUrl) : undefined;
     this.authenticated = Boolean(token && token.trim().length > 0);
+    this.authentication = authentication ?? (this.authenticated ? "personal_token" : "anonymous");
 
     this.octokit =
       octokit ??

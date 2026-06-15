@@ -1,6 +1,6 @@
 # Database Schema
 
-RepoPulse V0.5 uses PostgreSQL through Prisma.
+RepoPulse V0.6 uses PostgreSQL through Prisma for persistent analysis jobs, historical reports and GitHub App webhook state.
 
 ## Migration
 
@@ -8,6 +8,13 @@ Initial migration:
 
 ```text
 20260614143000_init_persistent_analysis
+```
+
+GitHub App foundation and webhook automation migrations:
+
+```text
+20260615182000_add_github_app_installations_and_webhooks
+20260615193000_enforce_webhook_analysis_idempotency
 ```
 
 V0.5.1 integration tests apply this committed migration to a unique temporary PostgreSQL schema using `prisma migrate deploy`. Tests do not use `prisma db push`, `migrate dev`, or `migrate reset`.
@@ -70,6 +77,52 @@ Stores important lifecycle events, such as:
 - `CACHE_HIT`
 
 Events intentionally do not record every GitHub API request.
+
+## GitHubInstallation
+
+Stores one row per GitHub App installation. Installation IDs are stored as PostgreSQL `BigInt`; API responses never expose installation tokens.
+
+Important fields:
+
+- `installationId`
+- `accountId`, `accountLogin`, `accountType`
+- `repositorySelection`
+- `permissionsJson`, `subscribedEvents`
+- `status`
+- `suspendedAt`, `deletedAt`
+
+Suspended and deleted installations are retained so historical reports remain attached to repositories.
+
+## GitHubInstallationRepository
+
+Stores the repository authorization mapping for an installation.
+
+Important fields:
+
+- `githubRepositoryId`
+- `private`
+- `active`
+- `removedAt`
+- `lastWebhookAt`
+- `lastFullSyncAt`
+
+Repository renames are handled by GitHub repository ID to avoid duplicate `Repository` rows.
+
+## WebhookDelivery
+
+Stores each signed GitHub webhook delivery after API verification.
+
+Important fields:
+
+- `deliveryId`
+- `eventName`, `action`
+- `payloadHash`
+- `normalizedPayload`
+- `status`
+- `attemptCount`, `availableAt`
+- `processingMessage`
+
+Each delivery can create at most one `AnalysisRun` through the unique `AnalysisRun.webhookDeliveryId` constraint.
 
 ## Integration Verification
 

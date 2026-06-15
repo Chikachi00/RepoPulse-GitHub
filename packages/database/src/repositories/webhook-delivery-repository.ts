@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient, WebhookDelivery } from "@prisma/client";
 
 import { getPrismaClient } from "../client.js";
 import { WebhookDeliveryConflictError } from "../errors.js";
+import { getConfiguredPostgresSchema } from "../postgres-schema.js";
 
 export interface CreateWebhookDeliveryInput {
   deliveryId: string;
@@ -61,5 +62,121 @@ export class WebhookDeliveryRepository {
       delivery,
       duplicate: false
     };
+  }
+
+  async claimNext(workerId: string, now = new Date()): Promise<WebhookDelivery | null> {
+    const schema = getConfiguredPostgresSchema();
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT set_config('search_path', ${schema}, true)
+      `;
+      const rows = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id
+        FROM "WebhookDelivery"
+        WHERE status IN ('RECEIVED', 'RETRY_WAIT')
+          AND "availableAt" <= NOW()
+        ORDER BY "receivedAt" ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+      `;
+      const id = rows[0]?.id;
+
+      if (!id) {
+        return null;
+      }
+
+      return tx.webhookDelivery.update({
+        where: { id },
+        data: {
+          status: "PROCESSING",
+          workerId,
+          claimedAt: now,
+          heartbeatAt: now,
+          attemptCount: { increment: 1 },
+          errorCode: null,
+          errorMessage: null,
+          processingMessage: "Webhook worker claimed delivery"
+        }
+      });
+    });
+  }
+
+  async markProcessed(id: string, message: string, now = new Date()): Promise<void> {
+    await this.prisma.webhookDelivery.update({
+      where: { id },
+      data: {
+        status: "PROCESSED",
+        processedAt: now,
+        workerId: null,
+        heartbeatAt: null,
+        errorCode: null,
+        errorMessage: null,
+        processingMessage: message
+      }
+    });
+  }
+
+  async markIgnored(id: string, message: string, now = new Date()): Promise<void> {
+    await this.prisma.webhookDelivery.update({
+      where: { id },
+      data: {
+        status: "IGNORED",
+        processedAt: now,
+        workerId: null,
+        heartbeatAt: null,
+        errorCode: null,
+        errorMessage: null,
+        processingMessage: message
+      }
+    });
+  }
+
+  async markFailed(
+    id: string,
+    errorCode: string,
+    errorMessage: string,
+    now = new Date()
+  ): Promise<void> {
+    await this.prisma.webhookDelivery.update({
+      where: { id },
+      data: {
+        status: "FAILED",
+        failedAt: now,
+        workerId: null,
+        heartbeatAt: null,
+        errorCode,
+        errorMessage,
+        processingMessage: null
+      }
+    });
+  }
+
+  async scheduleRetry(
+    id: string,
+    errorCode: string,
+    errorMessage: string,
+    availableAt: Date
+  ): Promise<void> {
+    await this.prisma.webhookDelivery.update({
+      where: { id },
+      data: {
+        status: "RETRY_WAIT",
+        availableAt,
+        workerId: null,
+        heartbeatAt: null,
+        claimedAt: null,
+        errorCode,
+        errorMessage,
+        processingMessage: "Webhook processing retry scheduled"
+      }
+    });
+  }
+
+  async updateHeartbeat(id: string, now = new Date()): Promise<void> {
+    await this.prisma.webhookDelivery.update({
+      where: { id },
+      data: { heartbeatAt: now }
+    });
   }
 }

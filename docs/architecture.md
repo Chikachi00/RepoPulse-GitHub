@@ -6,6 +6,8 @@ RepoPulse is a TypeScript monorepo with a React web app, a Fastify API, a worker
 
 ```text
 Web -> API -> PostgreSQL AnalysisRun -> Worker -> RepositoryAnalyzer -> AnalysisReportRecord -> History API
+
+GitHub App -> Webhook API -> WebhookDelivery -> Webhook Worker -> AnalysisRun -> Analysis Worker -> History API
 ```
 
 The API returns `202 Accepted` immediately after creating a database task. The web app polls `GET /api/analyses/:analysisId` until the worker marks the task completed or failed.
@@ -22,6 +24,26 @@ POST /api/analyses
 ```
 
 Workers claim tasks with `FOR UPDATE SKIP LOCKED`. The claim transaction is intentionally short: it only marks one job as `RUNNING`, records the worker identity and writes a `CLAIMED` event. GitHub API work happens after that transaction commits.
+
+## GitHub App Webhook Flow
+
+```text
+GitHub App installation
+  -> signed webhook
+  -> API verifies HMAC SHA-256
+  -> WebhookDelivery stored
+  -> Webhook worker claims with FOR UPDATE SKIP LOCKED
+  -> installation or repository mapping updated
+  -> push / pull_request creates FULL AnalysisRun
+  -> analysis worker selects installation token client
+  -> AnalysisReportRecord stored as a historical snapshot
+```
+
+The webhook API never performs repository analysis inline. It validates the signature, normalizes a minimal payload and returns `202 Accepted`. The webhook worker handles only `installation`, `installation_repositories`, `push` and `pull_request`. Unsupported events are marked `IGNORED`.
+
+Default-branch `push` events and supported pull request actions create full repository analyses. If the same repository already has a webhook-triggered full analysis in `PENDING`, `RUNNING` or `RETRY_WAIT`, the delivery is marked processed and no duplicate run is created.
+
+Connected repositories prefer GitHub App installation tokens. Private repositories without an active installation fail with a GitHub App specific error instead of falling back to anonymous access.
 
 ## GitHub Analysis Flow
 

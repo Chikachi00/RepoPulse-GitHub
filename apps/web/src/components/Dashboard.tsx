@@ -9,7 +9,8 @@ import type {
   FileHotspot,
   IssueAgeBucket,
   RepositoryHistoryItem,
-  RepositoryHistoryResponse
+  RepositoryHistoryResponse,
+  RepositoryIntegrationStatus
 } from "@repopulse/shared";
 
 interface DashboardProps {
@@ -88,6 +89,52 @@ function MetricCard({ label, value }: { label: string; value: string | number })
       <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
       <dd className="mt-2 text-2xl font-semibold text-slate-950">{value}</dd>
     </div>
+  );
+}
+
+function IntegrationStatusCard({ status }: { status: RepositoryIntegrationStatus | null }) {
+  if (!status) {
+    return null;
+  }
+
+  const title =
+    status.installationStatus === "suspended"
+      ? "GitHub App installation suspended"
+      : status.installed
+        ? "GitHub App connected"
+        : "GitHub App not connected";
+  const message =
+    status.installationStatus === "suspended"
+      ? "Automatic refresh is currently paused."
+      : status.installed
+        ? "Automatic webhook refresh is enabled for this repository."
+        : "Connect RepoPulse to receive automatic repository refreshes after pushes and pull request activity.";
+
+  return (
+    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-medium text-emerald-700">Repository integration</p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-950">{title}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{message}</p>
+        </div>
+        {!status.installed && status.installUrl ? (
+          <a
+            className="inline-flex min-h-10 w-fit items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+            href={status.installUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Connect GitHub App
+          </a>
+        ) : null}
+      </div>
+      <dl className="mt-4 grid gap-3 text-sm text-slate-700 sm:grid-cols-3">
+        <div>Installation status: {status.installationStatus.replace("_", " ")}</div>
+        <div>Last webhook: {formatDate(status.lastWebhookAt)}</div>
+        <div>Last full sync: {formatDate(status.lastFullSyncAt)}</div>
+      </dl>
+    </article>
   );
 }
 
@@ -265,6 +312,9 @@ export function Dashboard({ analysis }: DashboardProps) {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historicalReport, setHistoricalReport] = useState<AnalysisReport | null>(null);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [integrationStatus, setIntegrationStatus] = useState<RepositoryIntegrationStatus | null>(
+    null
+  );
 
   useEffect(() => {
     if (!latestReport) {
@@ -301,6 +351,40 @@ export function Dashboard({ analysis }: DashboardProps) {
     }
 
     void loadHistory();
+
+    return () => controller.abort();
+  }, [latestReport]);
+
+  useEffect(() => {
+    if (!latestReport) {
+      return;
+    }
+
+    const repositoryForIntegration = latestReport.repository;
+    const controller = new AbortController();
+
+    async function loadIntegrationStatus() {
+      try {
+        const response = await fetch(
+          `/api/repositories/${repositoryForIntegration.owner}/${repositoryForIntegration.name}/integration`,
+          {
+            signal: controller.signal
+          }
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        setIntegrationStatus((await response.json()) as RepositoryIntegrationStatus);
+      } catch {
+        if (!controller.signal.aborted) {
+          setIntegrationStatus(null);
+        }
+      }
+    }
+
+    void loadIntegrationStatus();
 
     return () => controller.abort();
   }, [latestReport]);
@@ -439,6 +523,8 @@ export function Dashboard({ analysis }: DashboardProps) {
           <span>{repository.isArchived ? "Archived" : "Active"}</span>
         </div>
       </article>
+
+      <IntegrationStatusCard status={integrationStatus} />
 
       <section className="grid gap-3 lg:grid-cols-[minmax(260px,0.7fr)_minmax(0,1.3fr)]">
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">

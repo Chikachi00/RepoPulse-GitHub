@@ -11,6 +11,11 @@ export { AnalysisRunRepository } from "./repositories/analysis-run-repository.js
 export { CleanupRepository } from "./repositories/cleanup-repository.js";
 export type { CleanupOptions, CleanupResult } from "./repositories/cleanup-repository.js";
 export { JobClaimRepository } from "./repositories/job-claim-repository.js";
+export { GitHubInstallationRepository } from "./repositories/github-installation-repository.js";
+export type {
+  InstallationUpsertInput,
+  WebhookRepositoryInput
+} from "./repositories/github-installation-repository.js";
 export { RecoveryRepository } from "./repositories/recovery-repository.js";
 export { WebhookDeliveryRepository } from "./repositories/webhook-delivery-repository.js";
 export type {

@@ -134,6 +134,15 @@ export class AnalysisReportRepository {
           lastAnalyzedAt: generatedAt
         }
       });
+      await tx.gitHubInstallationRepository.updateMany({
+        where: {
+          repositoryId,
+          active: true
+        },
+        data: {
+          lastFullSyncAt: generatedAt
+        }
+      });
       await tx.analysisReportRecord.create({
         data: {
           analysisRunId,

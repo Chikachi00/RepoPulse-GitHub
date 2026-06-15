@@ -59,6 +59,82 @@ export class AnalysisRunRepository {
     });
   }
 
+  async createWebhookFullAnalysis(input: {
+    repositoryId: string;
+    webhookDeliveryId: string;
+    triggerEvent: string;
+    priority?: number;
+    now?: Date;
+  }): Promise<{ run: AnalysisRun | null; suppressed: boolean; reason: string | null }> {
+    return this.prisma.$transaction(async (tx) => {
+      const existingForDelivery = await tx.analysisRun.findUnique({
+        where: { webhookDeliveryId: input.webhookDeliveryId }
+      });
+
+      if (existingForDelivery) {
+        return {
+          run: existingForDelivery,
+          suppressed: true,
+          reason: "Webhook delivery already created an analysis run"
+        };
+      }
+
+      const activeRun = await tx.analysisRun.findFirst({
+        where: {
+          repositoryId: input.repositoryId,
+          triggerSource: "WEBHOOK",
+          analysisMode: "FULL",
+          status: { in: ["PENDING", "RUNNING", "RETRY_WAIT"] }
+        },
+        orderBy: { queuedAt: "asc" }
+      });
+
+      if (activeRun) {
+        return {
+          run: activeRun,
+          suppressed: true,
+          reason: "Existing webhook analysis already queued or running"
+        };
+      }
+
+      const run = await tx.analysisRun.create({
+        data: {
+          repositoryId: input.repositoryId,
+          status: "PENDING",
+          currentStep: "Webhook analysis queued",
+          progress: 0,
+          forceRefresh: true,
+          priority: input.priority ?? 5,
+          triggerSource: "WEBHOOK",
+          triggerEvent: input.triggerEvent,
+          analysisMode: "FULL",
+          webhookDeliveryId: input.webhookDeliveryId,
+          deduplicationKey: `webhook:${input.webhookDeliveryId}`,
+          availableAt: input.now ?? new Date()
+        }
+      });
+
+      await tx.analysisEvent.create({
+        data: {
+          analysisRunId: run.id,
+          eventType: "QUEUED",
+          progress: 0,
+          message: "Webhook analysis queued",
+          metadata: {
+            triggerEvent: input.triggerEvent,
+            webhookDeliveryId: input.webhookDeliveryId
+          }
+        }
+      });
+
+      return {
+        run,
+        suppressed: false,
+        reason: null
+      };
+    });
+  }
+
   async createCompletedFromCache(repositoryId: string, reportId: string): Promise<AnalysisRun> {
     return this.prisma.$transaction(async (tx) => {
       const sourceReport = await tx.analysisReportRecord.findUniqueOrThrow({

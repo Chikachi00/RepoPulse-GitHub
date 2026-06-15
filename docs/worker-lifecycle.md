@@ -1,6 +1,6 @@
 # Worker Lifecycle
 
-RepoPulse V0.5 moves analysis execution out of the API process and into `@repopulse/worker`.
+RepoPulse V0.6 runs analysis execution and webhook delivery processing in `@repopulse/worker`.
 
 ## States
 
@@ -98,3 +98,31 @@ Worker integration tests use a mock `RepositoryAnalyzer` and a real PostgreSQL d
 - max-attempt exhaustion
 
 The analyzer is mocked so tests never call GitHub.
+
+## Webhook Worker
+
+The same worker process also runs an independent webhook delivery loop.
+
+Webhook delivery states:
+
+```text
+RECEIVED
+PROCESSING
+PROCESSED
+IGNORED
+RETRY_WAIT
+FAILED
+```
+
+The webhook loop claims deliveries with `FOR UPDATE SKIP LOCKED`, using the configured PostgreSQL schema before raw SQL selection. It processes only:
+
+- `installation`
+- `installation_repositories`
+- `push`
+- `pull_request`
+
+Unsupported events or unsupported pull request actions are marked `IGNORED`, not `FAILED`.
+
+Default-branch `push` and supported pull request events create `WEBHOOK` / `FULL` analysis runs. If a repository already has an active webhook full analysis in `PENDING`, `RUNNING` or `RETRY_WAIT`, the delivery is marked `PROCESSED` with a suppression note and no duplicate run is created.
+
+Webhook processing never performs GitHub analysis inline. It only updates installation state, repository mappings or queues an analysis run for the analysis loop.

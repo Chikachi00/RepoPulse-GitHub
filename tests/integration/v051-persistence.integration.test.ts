@@ -1,4 +1,4 @@
-import type { AnalysisRun, PrismaClient, Repository } from "@prisma/client";
+import type { AnalysisRun, PrismaClient, Repository, WebhookDelivery } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { GitHubServiceError, type RepositoryAnalyzer } from "@repopulse/analysis-engine";
 import type { AnalysisOptions, AnalysisReport, RepositoryIdentifier } from "@repopulse/shared";
@@ -14,11 +14,14 @@ import {
   CleanupRepository,
   disconnectPrisma,
   getPrismaClient,
+  GitHubInstallationRepository,
   JobClaimRepository,
   RecoveryRepository,
   RepositoryRepository,
-  REPORT_SCHEMA_VERSION
+  REPORT_SCHEMA_VERSION,
+  WebhookDeliveryRepository
 } from "@repopulse/database";
+import { WebhookRunner } from "../../apps/worker/src/webhooks/webhook-runner.js";
 import { cleanDatabase } from "./setup/database-cleaner.js";
 import { createTestReport } from "./setup/report-factory.js";
 import {
@@ -33,6 +36,8 @@ let repositoryRepository: RepositoryRepository;
 let runRepository: AnalysisRunRepository;
 let reportRepository: AnalysisReportRepository;
 let claimRepository: JobClaimRepository;
+let installationRepository: GitHubInstallationRepository;
+let webhookRepository: WebhookDeliveryRepository;
 
 async function createRepository(
   owner = "Chikachi00",
@@ -114,6 +119,106 @@ async function createCompletedRun(
   return run;
 }
 
+function normalizedRepository(overrides: Record<string, unknown> = {}) {
+  return {
+    githubId: "9001",
+    owner: "Chikachi00",
+    name: "RepoPulse-GitHub",
+    fullName: "Chikachi00/RepoPulse-GitHub",
+    private: false,
+    defaultBranch: "main",
+    ...overrides
+  };
+}
+
+function normalizedWebhookPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    deliveryId: "delivery-1",
+    eventName: "push",
+    action: null,
+    installationId: "7001",
+    installation: {
+      id: "7001",
+      accountId: "8001",
+      accountLogin: "Chikachi00",
+      accountType: "User",
+      targetType: "User",
+      repositorySelection: "selected",
+      permissions: { contents: "read", pull_requests: "read" },
+      events: ["installation", "installation_repositories", "push", "pull_request"]
+    },
+    repository: normalizedRepository(),
+    ref: "refs/heads/main",
+    repositories: [normalizedRepository()],
+    repositoriesAdded: [normalizedRepository()],
+    repositoriesRemoved: [normalizedRepository()],
+    ...overrides
+  };
+}
+
+async function createWebhookDelivery(
+  deliveryId: string,
+  payloadOverrides: Record<string, unknown> = {}
+): Promise<WebhookDelivery> {
+  const payload = normalizedWebhookPayload({
+    deliveryId,
+    ...payloadOverrides
+  });
+  const result = await webhookRepository.createReceived({
+    deliveryId,
+    eventName: typeof payload.eventName === "string" ? payload.eventName : "push",
+    action: typeof payload.action === "string" ? payload.action : null,
+    githubInstallationId: payload.installationId ? BigInt(String(payload.installationId)) : null,
+    githubRepositoryId:
+      payload.repository &&
+      typeof payload.repository === "object" &&
+      "githubId" in payload.repository
+        ? BigInt(String(payload.repository.githubId))
+        : null,
+    repositoryFullName:
+      payload.repository &&
+      typeof payload.repository === "object" &&
+      "fullName" in payload.repository
+        ? String(payload.repository.fullName)
+        : null,
+    payloadHash: `hash-${deliveryId}`,
+    normalizedPayload: payload
+  });
+
+  return result.delivery;
+}
+
+async function createActiveInstallationWithRepository(
+  options: {
+    private?: boolean;
+    defaultBranch?: string | null;
+    repositoryName?: string;
+  } = {}
+) {
+  const repository = normalizedRepository({
+    private: options.private ?? false,
+    defaultBranch: options.defaultBranch ?? "main",
+    name: options.repositoryName ?? "RepoPulse-GitHub",
+    fullName: `Chikachi00/${options.repositoryName ?? "RepoPulse-GitHub"}`
+  });
+
+  await installationRepository.upsertActiveInstallation(
+    {
+      installationId: "7001",
+      accountId: "8001",
+      accountLogin: "Chikachi00",
+      accountType: "User",
+      targetType: "User",
+      repositorySelection: "selected",
+      permissions: { contents: "read" },
+      events: ["push", "pull_request"]
+    },
+    [repository]
+  );
+
+  return repository;
+}
+
 class MockAnalyzer implements RepositoryAnalyzer {
   constructor(private readonly result: AnalysisReport | Error) {}
 
@@ -159,6 +264,8 @@ beforeAll(async () => {
   runRepository = new AnalysisRunRepository(prisma);
   reportRepository = new AnalysisReportRepository(prisma);
   claimRepository = new JobClaimRepository(prisma);
+  installationRepository = new GitHubInstallationRepository(prisma);
+  webhookRepository = new WebhookDeliveryRepository(prisma);
 });
 
 afterAll(async () => {
@@ -735,6 +842,411 @@ describe("V0.5.1 PostgreSQL integration", () => {
     expect(secondActual.oldCompletedRuns).toBe(0);
   });
 
+  test("claims each webhook delivery with only one worker", async () => {
+    const delivery = await createWebhookDelivery("delivery-claim");
+
+    const [claimA, claimB] = await Promise.all([
+      webhookRepository.claimNext("webhook-worker-a"),
+      webhookRepository.claimNext("webhook-worker-b")
+    ]);
+    const claims = [claimA, claimB].filter((claim): claim is WebhookDelivery => claim !== null);
+    const stored = await prisma.webhookDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.id).toBe(delivery.id);
+    expect(stored.status).toBe("PROCESSING");
+    expect(stored.attemptCount).toBe(1);
+  });
+
+  test("persists installation created, suspend, unsuspend, and deleted webhooks", async () => {
+    await createWebhookDelivery("delivery-install-created", {
+      eventName: "installation",
+      action: "created"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+
+    const created = await prisma.gitHubInstallation.findUniqueOrThrow({
+      where: { installationId: 7001n },
+      include: { repositories: true }
+    });
+    expect(created.status).toBe("ACTIVE");
+    expect(created.repositories).toHaveLength(1);
+
+    await createWebhookDelivery("delivery-install-suspend", {
+      eventName: "installation",
+      action: "suspend"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+    await expect(
+      prisma.gitHubInstallation.findUniqueOrThrow({ where: { installationId: 7001n } })
+    ).resolves.toMatchObject({ status: "SUSPENDED" });
+
+    await createWebhookDelivery("delivery-install-unsuspend", {
+      eventName: "installation",
+      action: "unsuspend"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+    await expect(
+      prisma.gitHubInstallation.findUniqueOrThrow({ where: { installationId: 7001n } })
+    ).resolves.toMatchObject({ status: "ACTIVE", suspendedAt: null });
+
+    await createWebhookDelivery("delivery-install-deleted", {
+      eventName: "installation",
+      action: "deleted"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+    await expect(
+      prisma.gitHubInstallation.findUniqueOrThrow({ where: { installationId: 7001n } })
+    ).resolves.toMatchObject({ status: "DELETED" });
+    await expect(
+      prisma.gitHubInstallationRepository.count({ where: { active: true } })
+    ).resolves.toBe(0);
+  });
+
+  test("installation created stores permissions, events, and repository privacy", async () => {
+    await createWebhookDelivery("delivery-install-created-details", {
+      eventName: "installation",
+      action: "created",
+      repositories: [normalizedRepository({ private: true })]
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+
+    const installation = await prisma.gitHubInstallation.findUniqueOrThrow({
+      where: { installationId: 7001n }
+    });
+    const mapping = await prisma.gitHubInstallationRepository.findFirstOrThrow({
+      include: { repository: true }
+    });
+
+    expect(installation.permissionsJson).toMatchObject({ contents: "read" });
+    expect(installation.subscribedEvents).toContain("push");
+    expect(mapping.private).toBe(true);
+    expect(mapping.repository.defaultBranch).toBe("main");
+  });
+
+  test("installation deleted preserves repository and historical reports", async () => {
+    const repositoryPayload = await createActiveInstallationWithRepository();
+    const repository = await prisma.repository.findFirstOrThrow({
+      where: { githubId: BigInt(repositoryPayload.githubId) }
+    });
+    await createCompletedRun(repository, new Date("2026-06-15T00:00:00.000Z"));
+    await createWebhookDelivery("delivery-install-delete-preserve", {
+      eventName: "installation",
+      action: "deleted"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+
+    await expect(prisma.repository.count()).resolves.toBe(1);
+    await expect(prisma.analysisReportRecord.count()).resolves.toBe(1);
+    await expect(
+      prisma.gitHubInstallationRepository.count({ where: { active: true } })
+    ).resolves.toBe(0);
+  });
+
+  test("adds, removes, and restores repository installation mappings", async () => {
+    await installationRepository.upsertActiveInstallation(
+      {
+        installationId: "7001",
+        accountId: "8001",
+        accountLogin: "Chikachi00",
+        accountType: "User",
+        targetType: "User",
+        repositorySelection: "selected",
+        permissions: {},
+        events: ["push"]
+      },
+      []
+    );
+    await createWebhookDelivery("delivery-repository-added", {
+      eventName: "installation_repositories",
+      action: "added"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+    await expect(
+      prisma.gitHubInstallationRepository.count({ where: { active: true } })
+    ).resolves.toBe(1);
+
+    await createWebhookDelivery("delivery-repository-removed", {
+      eventName: "installation_repositories",
+      action: "removed"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+    await expect(
+      prisma.gitHubInstallationRepository.count({ where: { active: true } })
+    ).resolves.toBe(0);
+
+    await createWebhookDelivery("delivery-repository-restored", {
+      eventName: "installation_repositories",
+      action: "added"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+    await expect(prisma.gitHubInstallationRepository.count()).resolves.toBe(1);
+    await expect(
+      prisma.gitHubInstallationRepository.count({ where: { active: true } })
+    ).resolves.toBe(1);
+  });
+
+  test("repository removed preserves repository rows and history", async () => {
+    await createActiveInstallationWithRepository();
+    const repository = await prisma.repository.findFirstOrThrow();
+    await createCompletedRun(repository, new Date("2026-06-15T00:00:00.000Z"));
+    await createWebhookDelivery("delivery-repository-remove-preserve", {
+      eventName: "installation_repositories",
+      action: "removed"
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+
+    await expect(prisma.repository.count()).resolves.toBe(1);
+    await expect(prisma.analysisReportRecord.count()).resolves.toBe(1);
+    await expect(prisma.gitHubInstallationRepository.findFirstOrThrow()).resolves.toMatchObject({
+      active: false
+    });
+  });
+
+  test("updates repository rename by GitHub repository ID without duplicate rows", async () => {
+    await createActiveInstallationWithRepository({ repositoryName: "OldName" });
+    await createWebhookDelivery("delivery-repository-rename", {
+      eventName: "installation_repositories",
+      action: "added",
+      repositoriesAdded: [
+        normalizedRepository({
+          name: "NewName",
+          fullName: "Chikachi00/NewName"
+        })
+      ]
+    });
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+
+    const repositories = await prisma.repository.findMany({ where: { githubId: 9001n } });
+    expect(repositories).toHaveLength(1);
+    expect(repositories[0]?.name).toBe("NewName");
+    expect(repositories[0]?.normalizedName).toBe("chikachi00/newname");
+  });
+
+  test("default branch push and supported pull request webhooks create full analysis runs", async () => {
+    await createActiveInstallationWithRepository();
+    await createWebhookDelivery("delivery-push-main");
+    await createWebhookDelivery("delivery-pr-sync", {
+      eventName: "pull_request",
+      action: "synchronize"
+    });
+    const runner = new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository);
+    await runner.runOnce();
+    await runner.runOnce();
+
+    const runs = await prisma.analysisRun.findMany({ orderBy: { queuedAt: "asc" } });
+    expect(runs).toHaveLength(2);
+    expect(runs.map((run) => run.triggerEvent)).toEqual(["push", "pull_request:synchronize"]);
+    expect(runs.every((run) => run.triggerSource === "WEBHOOK")).toBe(true);
+    expect(runs.every((run) => run.analysisMode === "FULL")).toBe(true);
+    expect(runs.every((run) => run.forceRefresh)).toBe(true);
+  });
+
+  test("push updates last webhook timestamp on active mapping", async () => {
+    await createActiveInstallationWithRepository();
+    await createWebhookDelivery("delivery-last-webhook");
+    await new WebhookRunner(
+      {
+        workerId: "webhook-worker",
+        now: () => new Date("2026-06-15T01:00:00.000Z")
+      },
+      webhookRepository
+    ).runOnce();
+
+    const mapping = await prisma.gitHubInstallationRepository.findFirstOrThrow();
+    expect(mapping.lastWebhookAt?.toISOString()).toBe("2026-06-15T01:00:00.000Z");
+  });
+
+  test("suspended installation push does not create an analysis run", async () => {
+    await createActiveInstallationWithRepository();
+    await installationRepository.suspendInstallation("7001");
+    await createWebhookDelivery("delivery-suspended-push");
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+
+    await expect(prisma.analysisRun.count()).resolves.toBe(0);
+    await expect(
+      prisma.webhookDelivery.findUniqueOrThrow({ where: { deliveryId: "delivery-suspended-push" } })
+    ).resolves.toMatchObject({ status: "PROCESSED" });
+  });
+
+  test("non-default push, unsupported PR action, and unsupported event do not create runs", async () => {
+    await createActiveInstallationWithRepository();
+    await createWebhookDelivery("delivery-push-feature", { ref: "refs/heads/feature" });
+    await createWebhookDelivery("delivery-pr-labeled", {
+      eventName: "pull_request",
+      action: "labeled"
+    });
+    await createWebhookDelivery("delivery-issues", {
+      eventName: "issues",
+      action: "opened"
+    });
+    const runner = new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository);
+    await runner.runOnce();
+    await runner.runOnce();
+    await runner.runOnce();
+
+    await expect(prisma.analysisRun.count()).resolves.toBe(0);
+    await expect(prisma.webhookDelivery.count({ where: { status: "IGNORED" } })).resolves.toBe(2);
+    await expect(prisma.webhookDelivery.count({ where: { status: "PROCESSED" } })).resolves.toBe(1);
+  });
+
+  test("suppresses duplicate active webhook runs and allows a new run after completion", async () => {
+    await createActiveInstallationWithRepository();
+    await createWebhookDelivery("delivery-webhook-first");
+    await createWebhookDelivery("delivery-webhook-duplicate");
+    const runner = new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository);
+    await runner.runOnce();
+    await runner.runOnce();
+
+    await expect(prisma.analysisRun.count()).resolves.toBe(1);
+    await expect(
+      prisma.webhookDelivery.findUniqueOrThrow({
+        where: { deliveryId: "delivery-webhook-duplicate" }
+      })
+    ).resolves.toMatchObject({
+      status: "PROCESSED",
+      processingMessage: "Existing webhook analysis already queued or running"
+    });
+
+    const run = await prisma.analysisRun.findFirstOrThrow();
+    await prisma.analysisRun.update({
+      where: { id: run.id },
+      data: { status: "COMPLETED", completedAt: new Date() }
+    });
+    await createWebhookDelivery("delivery-webhook-after-complete");
+    await runner.runOnce();
+
+    await expect(prisma.analysisRun.count()).resolves.toBe(2);
+  });
+
+  test("keeps one analysis relation per webhook delivery", async () => {
+    await createActiveInstallationWithRepository();
+    const delivery = await createWebhookDelivery("delivery-idempotent");
+
+    const first = await runRepository.createWebhookFullAnalysis({
+      repositoryId: (await prisma.repository.findFirstOrThrow()).id,
+      webhookDeliveryId: delivery.id,
+      triggerEvent: "push"
+    });
+    const second = await runRepository.createWebhookFullAnalysis({
+      repositoryId: (await prisma.repository.findFirstOrThrow()).id,
+      webhookDeliveryId: delivery.id,
+      triggerEvent: "push"
+    });
+
+    expect(first.suppressed).toBe(false);
+    expect(second.suppressed).toBe(true);
+    await expect(
+      prisma.analysisRun.count({ where: { webhookDeliveryId: delivery.id } })
+    ).resolves.toBe(1);
+  });
+
+  test("webhook delivery duplicate with same hash is idempotent", async () => {
+    const first = await createWebhookDelivery("delivery-duplicate-same");
+    const duplicate = await webhookRepository.createReceived({
+      deliveryId: "delivery-duplicate-same",
+      eventName: "push",
+      action: null,
+      githubInstallationId: 7001n,
+      githubRepositoryId: 9001n,
+      repositoryFullName: "Chikachi00/RepoPulse-GitHub",
+      payloadHash: "hash-delivery-duplicate-same",
+      normalizedPayload: normalizedWebhookPayload({ deliveryId: "delivery-duplicate-same" })
+    });
+
+    expect(duplicate.duplicate).toBe(true);
+    expect(duplicate.delivery.id).toBe(first.id);
+    await expect(prisma.webhookDelivery.count()).resolves.toBe(1);
+  });
+
+  test("webhook delivery duplicate with different hash is rejected", async () => {
+    await createWebhookDelivery("delivery-duplicate-conflict");
+
+    await expect(
+      webhookRepository.createReceived({
+        deliveryId: "delivery-duplicate-conflict",
+        eventName: "push",
+        action: null,
+        githubInstallationId: 7001n,
+        githubRepositoryId: 9001n,
+        repositoryFullName: "Chikachi00/RepoPulse-GitHub",
+        payloadHash: "different-hash",
+        normalizedPayload: normalizedWebhookPayload({ deliveryId: "delivery-duplicate-conflict" })
+      })
+    ).rejects.toMatchObject({ name: "WebhookDeliveryConflictError" });
+  });
+
+  test("invalid stored normalized webhook payload fails without creating a run", async () => {
+    await webhookRepository.createReceived({
+      deliveryId: "delivery-invalid-normalized",
+      eventName: "push",
+      action: null,
+      githubInstallationId: 7001n,
+      githubRepositoryId: 9001n,
+      repositoryFullName: "Chikachi00/RepoPulse-GitHub",
+      payloadHash: "hash-invalid",
+      normalizedPayload: { invalid: true }
+    });
+
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+
+    await expect(
+      prisma.webhookDelivery.findUniqueOrThrow({
+        where: { deliveryId: "delivery-invalid-normalized" }
+      })
+    ).resolves.toMatchObject({ status: "FAILED", errorCode: "WEBHOOK_PAYLOAD_INVALID" });
+    await expect(prisma.analysisRun.count()).resolves.toBe(0);
+  });
+
+  test("active and suspended installation mappings are visible to analysis workers", async () => {
+    await createActiveInstallationWithRepository({ private: true });
+    const repository = await prisma.repository.findFirstOrThrow();
+    await expect(
+      prisma.gitHubInstallationRepository.findFirst({
+        where: {
+          repositoryId: repository.id,
+          active: true,
+          installation: { status: "ACTIVE" }
+        }
+      })
+    ).resolves.not.toBeNull();
+
+    await installationRepository.suspendInstallation("7001");
+    await expect(
+      prisma.gitHubInstallationRepository.findFirst({
+        where: {
+          repositoryId: repository.id,
+          active: true,
+          installation: { status: "SUSPENDED" }
+        }
+      })
+    ).resolves.not.toBeNull();
+  });
+
+  test("retryable webhook handler errors enter retry wait", async () => {
+    await createWebhookDelivery("delivery-retry", {
+      eventName: "installation",
+      action: "created",
+      installation: null
+    });
+
+    await new WebhookRunner(
+      {
+        workerId: "webhook-worker",
+        retryDelayMs: 1_000,
+        now: () => new Date("2026-06-15T00:00:00.000Z")
+      },
+      webhookRepository
+    ).runOnce();
+
+    await expect(
+      prisma.webhookDelivery.findUniqueOrThrow({ where: { deliveryId: "delivery-retry" } })
+    ).resolves.toMatchObject({
+      status: "RETRY_WAIT",
+      errorCode: "WEBHOOK_PROCESSING_RETRY"
+    });
+  });
+
   test("persistent API returns degraded database responses without memory fallback", async () => {
     const previousDatabaseUrl = process.env.DATABASE_URL;
     await disconnectPrisma();
@@ -771,6 +1283,8 @@ describe("V0.5.1 PostgreSQL integration", () => {
       runRepository = new AnalysisRunRepository(prisma);
       reportRepository = new AnalysisReportRepository(prisma);
       claimRepository = new JobClaimRepository(prisma);
+      installationRepository = new GitHubInstallationRepository(prisma);
+      webhookRepository = new WebhookDeliveryRepository(prisma);
     }
   });
 });

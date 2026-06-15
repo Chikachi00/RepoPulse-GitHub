@@ -220,9 +220,7 @@ export class GitHubRepositoryAnalyzer implements RepositoryAnalyzer {
       dataQuality: {
         warnings,
         usedAuthenticatedGitHubClient: this.gitHubClient.authenticated,
-        githubAuthentication: this.gitHubClient.authenticated
-          ? ("personal_token" as const)
-          : ("anonymous" as const),
+        githubAuthentication: this.gitHubClient.authentication,
         rateLimitRemaining:
           commitAnalysis.rateLimitRemaining ?? this.gitHubClient.getRateLimitRemaining(),
         commitDetailsLimitedByRateLimit: commitAnalysis.commitDetailsLimitedByRateLimit,

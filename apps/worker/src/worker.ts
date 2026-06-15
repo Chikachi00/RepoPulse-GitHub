@@ -1,8 +1,4 @@
-import {
-  createGitHubClient,
-  GitHubRepositoryAnalyzer,
-  type RepositoryAnalyzer
-} from "@repopulse/analysis-engine";
+import type { RepositoryAnalyzer } from "@repopulse/analysis-engine";
 import {
   checkDatabaseConnection,
   disconnectPrisma,
@@ -11,8 +7,10 @@ import {
 } from "@repopulse/database";
 
 import type { WorkerConfig } from "./config.js";
+import { InstallationAwareRepositoryAnalyzer } from "./github-client-provider.js";
 import { Heartbeat } from "./heartbeat.js";
 import { JobRunner } from "./job-runner.js";
+import { WebhookRunner } from "./webhooks/webhook-runner.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -26,6 +24,7 @@ export interface WorkerRuntimeOptions {
 export class RepoPulseWorker {
   private stopping = false;
   private currentJob: Promise<void> | null = null;
+  private currentWebhookJob: Promise<boolean> | null = null;
   private readonly jobClaimRepository = new JobClaimRepository();
   private readonly recoveryRepository = new RecoveryRepository();
   private readonly analyzer: RepositoryAnalyzer;
@@ -35,8 +34,7 @@ export class RepoPulseWorker {
     private readonly config: WorkerConfig,
     options: WorkerRuntimeOptions = {}
   ) {
-    const gitHubClient = createGitHubClient(process.env.GITHUB_TOKEN);
-    this.analyzer = options.analyzer ?? new GitHubRepositoryAnalyzer(gitHubClient);
+    this.analyzer = options.analyzer ?? new InstallationAwareRepositoryAnalyzer();
     this.now = options.now ?? (() => new Date());
   }
 
@@ -49,6 +47,10 @@ export class RepoPulseWorker {
 
     await this.recoverStaleRuns();
 
+    await Promise.all([this.runAnalysisLoop(), this.runWebhookLoop()]);
+  }
+
+  private async runAnalysisLoop(): Promise<void> {
     while (!this.stopping) {
       try {
         const run = await this.jobClaimRepository.claimNext(this.config.workerId, this.now());
@@ -85,11 +87,40 @@ export class RepoPulseWorker {
     }
   }
 
+  private async runWebhookLoop(): Promise<void> {
+    const runner = new WebhookRunner({
+      workerId: this.config.workerId,
+      now: this.now
+    });
+
+    while (!this.stopping) {
+      try {
+        this.currentWebhookJob = runner.runOnce();
+        const processed = await this.currentWebhookJob;
+        this.currentWebhookJob = null;
+
+        if (!processed) {
+          await sleep(this.config.pollIntervalMs);
+        }
+      } catch (error) {
+        console.warn("webhook_worker_poll_error", {
+          workerId: this.config.workerId,
+          message: error instanceof Error ? error.message : "Unknown webhook worker error"
+        });
+        await sleep(this.config.pollIntervalMs);
+      }
+    }
+  }
+
   async stop(): Promise<void> {
     this.stopping = true;
 
     if (this.currentJob) {
       await Promise.race([this.currentJob, sleep(this.config.shutdownTimeoutMs)]);
+    }
+
+    if (this.currentWebhookJob) {
+      await Promise.race([this.currentWebhookJob, sleep(this.config.shutdownTimeoutMs)]);
     }
 
     await disconnectPrisma();
