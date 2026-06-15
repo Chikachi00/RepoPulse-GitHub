@@ -1026,17 +1026,37 @@ describe("V0.5.1 PostgreSQL integration", () => {
   test("default branch push and supported pull request webhooks create full analysis runs", async () => {
     await createActiveInstallationWithRepository();
     await createWebhookDelivery("delivery-push-main");
+    const runner = new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository);
+    await runner.runOnce();
+
+    const pushRun = await prisma.analysisRun.findFirstOrThrow({
+      where: { triggerEvent: "push" }
+    });
+    expect(pushRun).toMatchObject({
+      triggerSource: "WEBHOOK",
+      analysisMode: "FULL",
+      forceRefresh: true,
+      status: "PENDING"
+    });
+
+    await prisma.analysisRun.update({
+      where: { id: pushRun.id },
+      data: {
+        status: "COMPLETED",
+        completedAt: new Date("2026-06-15T00:01:00.000Z")
+      }
+    });
+
     await createWebhookDelivery("delivery-pr-sync", {
       eventName: "pull_request",
       action: "synchronize"
     });
-    const runner = new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository);
-    await runner.runOnce();
     await runner.runOnce();
 
-    const runs = await prisma.analysisRun.findMany({ orderBy: { queuedAt: "asc" } });
+    const runs = await prisma.analysisRun.findMany();
     expect(runs).toHaveLength(2);
-    expect(runs.map((run) => run.triggerEvent)).toEqual(["push", "pull_request:synchronize"]);
+    expect(runs.find((run) => run.triggerEvent === "push")).toBeDefined();
+    expect(runs.find((run) => run.triggerEvent === "pull_request:synchronize")).toBeDefined();
     expect(runs.every((run) => run.triggerSource === "WEBHOOK")).toBe(true);
     expect(runs.every((run) => run.analysisMode === "FULL")).toBe(true);
     expect(runs.every((run) => run.forceRefresh)).toBe(true);
@@ -1224,11 +1244,13 @@ describe("V0.5.1 PostgreSQL integration", () => {
   });
 
   test("retryable webhook handler errors enter retry wait", async () => {
-    await createWebhookDelivery("delivery-retry", {
-      eventName: "installation",
-      action: "created",
-      installation: null
-    });
+    await createActiveInstallationWithRepository();
+    await createWebhookDelivery("delivery-retry");
+    const retryingRouter = {
+      async route() {
+        throw new Error("Temporary database failure.");
+      }
+    };
 
     await new WebhookRunner(
       {
@@ -1236,7 +1258,8 @@ describe("V0.5.1 PostgreSQL integration", () => {
         retryDelayMs: 1_000,
         now: () => new Date("2026-06-15T00:00:00.000Z")
       },
-      webhookRepository
+      webhookRepository,
+      retryingRouter
     ).runOnce();
 
     await expect(
@@ -1244,6 +1267,29 @@ describe("V0.5.1 PostgreSQL integration", () => {
     ).resolves.toMatchObject({
       status: "RETRY_WAIT",
       errorCode: "WEBHOOK_PROCESSING_RETRY"
+    });
+    const stored = await prisma.webhookDelivery.findUniqueOrThrow({
+      where: { deliveryId: "delivery-retry" }
+    });
+    expect(stored.availableAt.toISOString()).toBe("2026-06-15T00:00:01.000Z");
+  });
+
+  test("installation created without metadata fails permanently", async () => {
+    await createWebhookDelivery("delivery-invalid-installation", {
+      eventName: "installation",
+      action: "created",
+      installation: null
+    });
+
+    await new WebhookRunner({ workerId: "webhook-worker" }, webhookRepository).runOnce();
+
+    await expect(
+      prisma.webhookDelivery.findUniqueOrThrow({
+        where: { deliveryId: "delivery-invalid-installation" }
+      })
+    ).resolves.toMatchObject({
+      status: "FAILED",
+      errorCode: "WEBHOOK_PAYLOAD_INVALID"
     });
   });
 

@@ -1,5 +1,7 @@
 import type { WebhookDelivery } from "@prisma/client";
 
+import { InvalidWebhookPayloadError } from "./errors.js";
+
 export interface NormalizedWebhookRepository {
   githubId: string;
   owner: string;
@@ -110,14 +112,14 @@ export function parseNormalizedWebhookPayload(delivery: WebhookDelivery): Normal
   const payload = delivery.normalizedPayload;
 
   if (!isRecord(payload)) {
-    throw new Error("Webhook payload is not normalized.");
+    throw new InvalidWebhookPayloadError("Webhook payload is not normalized.");
   }
 
   const deliveryId = stringOrNull(payload.deliveryId);
   const eventName = stringOrNull(payload.eventName);
 
   if (!deliveryId || !eventName) {
-    throw new Error("Webhook payload is missing required normalized fields.");
+    throw new InvalidWebhookPayloadError("Webhook payload is missing required normalized fields.");
   }
 
   return {

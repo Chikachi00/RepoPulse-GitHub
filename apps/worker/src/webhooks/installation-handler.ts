@@ -1,11 +1,12 @@
 import type { Prisma } from "@prisma/client";
 import { GitHubInstallationRepository } from "@repopulse/database";
 
+import { InvalidWebhookPayloadError } from "./errors.js";
 import type { NormalizedWebhookPayload, WebhookHandlerResult } from "./types.js";
 
 function installationInput(payload: NormalizedWebhookPayload) {
   if (!payload.installation) {
-    throw new Error("Installation payload is missing installation metadata.");
+    throw new InvalidWebhookPayloadError("Installation payload is missing installation metadata.");
   }
 
   return {
@@ -25,7 +26,7 @@ export class InstallationHandler {
 
   async handle(payload: NormalizedWebhookPayload, now = new Date()): Promise<WebhookHandlerResult> {
     if (!payload.installationId) {
-      throw new Error("Installation payload is missing installation ID.");
+      throw new InvalidWebhookPayloadError("Installation payload is missing installation ID.");
     }
 
     switch (payload.action) {

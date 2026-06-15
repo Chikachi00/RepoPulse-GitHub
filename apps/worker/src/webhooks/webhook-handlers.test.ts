@@ -6,9 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { InstallationAwareRepositoryAnalyzer } from "../github-client-provider.js";
 import { AnalysisTriggerHandler } from "./analysis-trigger-handler.js";
+import { InvalidWebhookPayloadError } from "./errors.js";
 import { InstallationHandler } from "./installation-handler.js";
 import { RepositoryInstallationHandler } from "./repository-installation-handler.js";
-import type { NormalizedWebhookPayload } from "./types.js";
+import { parseNormalizedWebhookPayload, type NormalizedWebhookPayload } from "./types.js";
+import { WebhookRunner } from "./webhook-runner.js";
 
 function payload(overrides: Partial<NormalizedWebhookPayload> = {}): NormalizedWebhookPayload {
   return {
@@ -72,6 +74,17 @@ function delivery(): WebhookDelivery {
   };
 }
 
+function deliveryWithPayload(
+  normalizedPayload: WebhookDelivery["normalizedPayload"] = payload() as unknown as WebhookDelivery["normalizedPayload"],
+  overrides: Partial<WebhookDelivery> = {}
+): WebhookDelivery {
+  return {
+    ...delivery(),
+    normalizedPayload,
+    ...overrides
+  };
+}
+
 function gitHubClient(authentication: GitHubClient["authentication"]): GitHubClient {
   const unavailable = async (): Promise<never> => {
     throw new Error("not used");
@@ -116,6 +129,114 @@ describe("Installation webhook handlers", () => {
     expect(repository.suspendInstallation).toHaveBeenCalledWith("1001", expect.any(Date));
     expect(repository.unsuspendInstallation).toHaveBeenCalledWith("1001", expect.any(Date));
     expect(repository.deleteInstallation).toHaveBeenCalledWith("1001", expect.any(Date));
+  });
+
+  it("uses typed payload errors for missing installation metadata", async () => {
+    const handler = new InstallationHandler({} as GitHubInstallationRepository);
+
+    await expect(
+      handler.handle(
+        payload({
+          eventName: "installation",
+          action: "created",
+          installation: null
+        })
+      )
+    ).rejects.toBeInstanceOf(InvalidWebhookPayloadError);
+  });
+});
+
+describe("normalized webhook payload parsing", () => {
+  it("throws typed payload errors for non-object and missing required fields", () => {
+    expect(() => parseNormalizedWebhookPayload(deliveryWithPayload(null))).toThrow(
+      InvalidWebhookPayloadError
+    );
+    expect(() => parseNormalizedWebhookPayload(deliveryWithPayload({ eventName: "push" }))).toThrow(
+      InvalidWebhookPayloadError
+    );
+    expect(() =>
+      parseNormalizedWebhookPayload(deliveryWithPayload({ deliveryId: "delivery-1" }))
+    ).toThrow(InvalidWebhookPayloadError);
+  });
+});
+
+describe("WebhookRunner error classification", () => {
+  function deliveryRepository(claimed: WebhookDelivery) {
+    return {
+      claimNext: vi.fn(async () => claimed),
+      markIgnored: vi.fn(async () => undefined),
+      markProcessed: vi.fn(async () => undefined),
+      markFailed: vi.fn(async () => undefined),
+      scheduleRetry: vi.fn(async () => undefined)
+    };
+  }
+
+  it("retries ordinary temporary router errors, even when the message contains payload", async () => {
+    const repository = deliveryRepository(deliveryWithPayload());
+    const router = {
+      route: vi.fn(async () => {
+        throw new Error("Temporary payload storage connection failure");
+      })
+    };
+
+    await new WebhookRunner(
+      {
+        workerId: "worker",
+        retryDelayMs: 1_000,
+        now: () => new Date("2026-06-15T00:00:00.000Z")
+      },
+      repository as never,
+      router
+    ).runOnce();
+
+    expect(repository.markFailed).not.toHaveBeenCalled();
+    expect(repository.scheduleRetry).toHaveBeenCalledWith(
+      "delivery-db-1",
+      "WEBHOOK_PROCESSING_RETRY",
+      "Temporary payload storage connection failure",
+      new Date("2026-06-15T00:00:01.000Z")
+    );
+  });
+
+  it("fails typed invalid payload errors permanently", async () => {
+    const repository = deliveryRepository(deliveryWithPayload({ invalid: true }));
+    const router = {
+      route: vi.fn(async () => ({ status: "processed" as const, message: "unused" }))
+    };
+
+    await new WebhookRunner({ workerId: "worker" }, repository as never, router).runOnce();
+
+    expect(repository.scheduleRetry).not.toHaveBeenCalled();
+    expect(repository.markFailed).toHaveBeenCalledWith(
+      "delivery-db-1",
+      "WEBHOOK_PAYLOAD_INVALID",
+      "Stored webhook payload is invalid.",
+      expect.any(Date)
+    );
+  });
+
+  it("fails ordinary router errors after max attempts", async () => {
+    const repository = deliveryRepository(
+      deliveryWithPayload(payload() as unknown as WebhookDelivery["normalizedPayload"], {
+        attemptCount: 3,
+        maxAttempts: 3
+      })
+    );
+    const router = {
+      route: vi.fn(async () => {
+        throw new Error("Temporary database failure.");
+      })
+    };
+
+    await new WebhookRunner({ workerId: "worker" }, repository as never, router).runOnce();
+
+    expect(repository.scheduleRetry).not.toHaveBeenCalled();
+    expect(repository.markFailed).toHaveBeenCalledWith(
+      "delivery-db-1",
+      "WEBHOOK_PROCESSING_FAILED",
+      "Webhook delivery processing failed.",
+      expect.any(Date)
+    );
   });
 });
 

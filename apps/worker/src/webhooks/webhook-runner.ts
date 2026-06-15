@@ -1,7 +1,10 @@
+import type { WebhookDelivery } from "@prisma/client";
 import { WebhookDeliveryRepository } from "@repopulse/database";
 
+import { InvalidWebhookPayloadError } from "./errors.js";
 import { WebhookEventRouter } from "./event-router.js";
 import { parseNormalizedWebhookPayload } from "./types.js";
+import type { NormalizedWebhookPayload, WebhookHandlerResult } from "./types.js";
 
 export interface WebhookRunnerOptions {
   workerId: string;
@@ -9,8 +12,12 @@ export interface WebhookRunnerOptions {
   retryDelayMs?: number;
 }
 
-function isInvalidPayloadError(error: unknown): boolean {
-  return error instanceof Error && error.message.toLowerCase().includes("payload");
+export interface WebhookRouter {
+  route(
+    delivery: WebhookDelivery,
+    payload: NormalizedWebhookPayload,
+    now?: Date
+  ): Promise<WebhookHandlerResult>;
 }
 
 export class WebhookRunner {
@@ -20,7 +27,7 @@ export class WebhookRunner {
   constructor(
     private readonly options: WebhookRunnerOptions,
     private readonly deliveries = new WebhookDeliveryRepository(),
-    private readonly router = new WebhookEventRouter()
+    private readonly router: WebhookRouter = new WebhookEventRouter()
   ) {
     this.now = options.now ?? (() => new Date());
     this.retryDelayMs = options.retryDelayMs ?? 30_000;
@@ -48,7 +55,7 @@ export class WebhookRunner {
       const message =
         error instanceof Error ? error.message : "Webhook delivery processing failed.";
 
-      if (isInvalidPayloadError(error)) {
+      if (error instanceof InvalidWebhookPayloadError) {
         await this.deliveries.markFailed(
           delivery.id,
           "WEBHOOK_PAYLOAD_INVALID",

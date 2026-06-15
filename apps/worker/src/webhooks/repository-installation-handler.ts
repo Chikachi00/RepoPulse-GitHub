@@ -1,5 +1,6 @@
 import { GitHubInstallationRepository } from "@repopulse/database";
 
+import { InvalidWebhookPayloadError } from "./errors.js";
 import type { NormalizedWebhookPayload, WebhookHandlerResult } from "./types.js";
 
 export class RepositoryInstallationHandler {
@@ -7,7 +8,9 @@ export class RepositoryInstallationHandler {
 
   async handle(payload: NormalizedWebhookPayload, now = new Date()): Promise<WebhookHandlerResult> {
     if (!payload.installationId) {
-      throw new Error("Repository installation payload is missing installation ID.");
+      throw new InvalidWebhookPayloadError(
+        "Repository installation payload is missing installation ID."
+      );
     }
 
     if (payload.action === "added") {
